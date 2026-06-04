@@ -7,15 +7,15 @@ ArgoCD tutorial.
 
 ## Current state
 
-The repository is **mid-development, not yet first-commit-clean**.
-The on-disk state (all files dated 2026-05-26) is:
+The repository is **v0.2.0 (2026-06-04) — first-commit-clean, but
+still under active development**. The on-disk state is:
 
 ```
 argocd-skill/
-├── SKILL.md                  261 lines, name=argocd-skill, bilingual
-├── references/               5 docs (~50 KB total)
+├── SKILL.md                  381 lines, name=argocd-skill, bilingual
+├── references/               5 docs (~62 KB total)
 │   ├── cli-installation.md
-│   ├── cli-commands.md
+│   ├── cli-commands.md       217 lines (v0.2.0 增强：+102 行)
 │   ├── kustomize-mapping.md
 │   ├── kustomize-examples.md
 │   └── batch-conversion-design.md
@@ -26,16 +26,21 @@ argocd-skill/
 │   └── README.md             full tool usage manual
 ├── LICENSE                   MIT, 2026, buhaiqing
 ├── README.md                 repo overview
-└── AGENTS.md                 this file
+└── AGENTS.md                 389 lines, this file
 ```
 
-**Repo state:** Two commits on `main`. `31775e0` is the initial
+**Repo state:** Three commits on `main`. `31775e0` is the initial
 LICENSE + generic-Python `.gitignore` commit. `2866fbe`
 (`feat(argocd-skill): 添加 ArgoCD CLI 技能及批量转换工具`) brings
 in the on-disk skill: `SKILL.md`, `references/` (5 docs), and
 `scripts/` (`argocd_cli_gen` package, tests, requirements, and its
-own `.gitignore`). This commit adds `AGENTS.md` and updates
-`README.md` to match the actual on-disk state.
+own `.gitignore`). The v0.2.0 commit (`docs(argocd-skill): 能力二
+向导化升级`) upgrades **Capability 2 only**: `SKILL.md` 能力二
+重写为 5 子协议 (2.1~2.5)；`references/cli-commands.md` 追加
+参数推断规则 / 复合意图编排 / 危险命令清单 / 开机自检四章；
+`AGENTS.md` 新增会话内状态复用规则 + 能力二开机环境检查协议。
+**Python 工具 8 个 .py md5 与 v0.1.0 完全一致，未被牵连**；
+`scripts/tests/` 66/66 测试通过 (0.64s)。
 
 The root `.gitignore` is the generic Python template. Each subdir
 with Python scratch state (`scripts/`, and any future `tests/`)
@@ -176,10 +181,35 @@ The generator's `00_preflight.sh` does the login once via
 so subsequent scripts in the run can omit `--server / --auth-token`.
 This is the **canonical** pattern for the skill to follow.
 
+### 会话内状态复用（短期 in-memory）
+
+上表中的 `{{user.*}}` 占位符在**同一 LLM 会话内**会被 agent 自动复用。
+规则清单（按顺序执行）：
+
+1. 上条命令中出现过的 `app_name / namespace / project / repo_url /
+   revision`，下条命令省略时**自动沿用**——不再向用户重述。
+2. 自动沿用时**必须在输出开头显式标注**：
+   `复用：app_name=my-app, namespace=production, project=default`
+   让用户一眼看清 agent 替它"记住"了哪些字段，便于纠错。
+3. **跨会话不持久**：新会话必须让用户重述关键字段。
+   不写入任何文件、不写入 LLM 长期记忆。
+4. **冲突优先原则**：若上条命令的 `app_name` 与本次意图不匹配
+   （例如上一条是 `my-app`，本次意图对象是 `other-app`），**不沿用**，
+   优先让用户确认目标 app_name。
+5. `ARGOCD_SERVER` 同样适用会话内复用规则——同一会话内不必每条
+   命令都检查，能力二开机预检通过后默认沿用（详见下文"能力二开机
+   环境检查"）。
+
+> **与凭证屏蔽规则不冲突**：本节复用规则仅作用于 LLM 上下文中的
+> `{{user.*}}` 占位符与 `ARGOCD_SERVER`。`ARGOCD_AUTH_TOKEN` 仍按
+> 上表规则**绝不可回显、绝不可写进日志/非加密通道**。env 变量本身
+> 由 shell 提供，不出现在 LLM 上下文——本节不改变该行为。
+
 ## Execution paths
 
 - **Primary (capabilities 1, 2)**: `argocd` CLI v2.x directly. Use
-  `--output json` so the agent can `jq` paths.
+  `--output json` so the agent can `jq` paths.（能力 2 在会话开头
+  需先执行"开机环境检查"，详见下文。）
 - **Sub-capability 3.1 (single YAML)**: Agent reads the YAML,
   applies the field→flag mapping from `references/kustomize-mapping.md`,
   outputs `argocd app create …` inline. No external tool needed.
@@ -208,6 +238,43 @@ require the user to repeat the exact resource identifier before
 invocation. This skill does **not** exercise destructive paths in
 its core flow — if the user wants destructive ops, delegate to
 `kubectl` or run a custom script.
+
+### 能力二开机环境检查（会话开头）
+
+在 LLM 会话内处理**第一条** argocd CLI 命令前，agent 必须**先**
+做以下检查（不阻塞用户提问，但必须先告诉用户结果）：
+
+1. `command -v argocd` → 未找到则提示安装（参考
+   `references/cli-installation.md`），并建议使用与 ArgoCD server
+   兼容的版本。
+2. `ARGOCD_AUTH_TOKEN` 是否已设 → 未设则提示"sync / rollback /
+   delete 等写操作将无法执行"。
+3. `ARGOCD_SERVER` 是否已设 → 未设则提示并要求用户提供
+   （**不要让用户把 token 直接粘到对话里**，提示设置 env 即可）。
+4. 若三项均齐备，提示"环境就绪，可执行写操作"。
+
+这套"LLM 端预检"与 `scripts/argocd_cli_gen/renderer.py` 顶部
+`SCRIPT_HEADER` 注释、`PREFLIGHT_SCRIPT` 中的 `00_preflight.sh`
+是**同一协议的两端**：
+
+- 脚本端：`00_preflight.sh` 在每批 `argocd app create` 之前显式
+  `argocd login --auth-token $ARGOCD_AUTH_TOKEN --grpc-web` 并
+  `argocd account get-user-info` 校验。
+- LLM 端：会话开头一次性检查 + 显式标注。会话内后续命令默认
+  `argocd login` 已完成，不再重复 prompt（与 `00_preflight.sh`
+  的"建立全局 session"行为一致）。
+
+措辞必须保持一致——同一份凭证/同一套协议，LLM 端和脚本端的报错
+应该让用户感觉是同一个工具在用。
+
+LLM 端预检话术示例（agent 视角，不是给用户看的代码）：
+
+```
+[preflight] 检测到 argocd CLI 已安装（v3.4.2）
+[preflight] ARGOCD_AUTH_TOKEN 已设（*** 屏蔽）
+[preflight] ARGOCD_SERVER 已设（argocd.hd123.com）
+[ok] 会话就绪，可执行写操作
+```
 
 ## App-of-Apps 4-tier production model
 
@@ -276,6 +343,7 @@ finds no new issues.
 
 | Task | Delegate to |
 |---|---|
+| argocd 会话开机预检（`command -v argocd` / `ARGOCD_*` env） | **argocd-skill 自身**（不委托） |
 | Cluster / node / pod inspection | `kubectl` (external) |
 | Image / registry operations | `docker` / `crane` / `oras` (external) |
 | Git operations (clone, fetch, diff) | `git` CLI (external) |

@@ -36,8 +36,128 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 ### 能力二：自然语言生成 CLI 命令
 
 将用户的操作描述映射为正确的 argocd CLI 命令。覆盖 20 个高频操作。
+本能力由五个子协议驱动：必备参数一次问齐、复合意图编排模板、危险命令二次确认、会话内状态复用、命令吐出前自检。任何 20 个高频命令都必须经过这五步才能输出。
 
 **完整命令表和示例详见：** [references/cli-commands.md](references/cli-commands.md)
+
+#### 2.1 必备参数收集协议（一次问完）
+
+收到不完整描述时，**禁止立刻吐占位符命令**。必须按命令→必填字段清单一次性问齐，避免来回三轮往返。下面是 5 个最高频命令的必填字段表：
+
+| 命令 | 必填字段 | 可选字段 | 默认推断 |
+|---|---|---|---|
+| `argocd app create APPNAME` | `APPNAME` / `--repo` / `--path` / `--dest-namespace` / `--project` | `--revision`（建议显式指定）/`--dest-server` | `--dest-server https://kubernetes.default.svc` |
+| `argocd app sync APPNAME` | `APPNAME` | `--revision` / `--timeout` | 追加 `--prune --sync-option PruneLast=true`（生产规范） |
+| `argocd app rollback APPNAME [HISTORY_ID]` | `APPNAME` | `HISTORY_ID`（省略则回上一版本） | — |
+| `argocd app set APPNAME` | `APPNAME` / `--sync-policy` | `--auto-prune` / `--self-heal`（与 `--sync-policy automated` 配对） | 三者同时给齐 |
+| `argocd app delete APPNAME` | `APPNAME` | `--cascade` | **必须二次确认（见 2.3）** |
+
+**一次问完的提问模板**（针对 `app create`）：
+
+> "请一次性提供以下信息：1) 应用名 2) Git 仓库 URL（含 https/ssh）3) 仓库内路径 4) 目标命名空间 5) revision（分支/tag/HEAD）6) AppProject 名（默认 `default`）"
+
+#### 2.2 复合意图编排模板（命中即用）
+
+复合意图（用户用一句话表达多步操作）必须按下列固定模板输出，不要临场拼接：
+
+**「创建并同步」：**
+
+```bash
+argocd app create <name> \
+  --repo <url> --path <p> --revision <rev> \
+  --dest-namespace <ns> --project default --upsert
+
+argocd app sync <name> --prune --sync-option PruneLast=true
+argocd app wait <name> --health --timeout 300
+```
+
+**「创建并设置自愈」（仅 Root 入口或明确需要时）：**
+
+```bash
+argocd app create <name> \
+  --repo <url> --path <p> --revision <rev> \
+  --dest-namespace <ns> --project default --upsert
+
+# ⚠️ 警告：--sync-policy automated 开启后，ArgoCD 会持续协调集群状态。
+# 仅当这是 Root 入口（destination.namespace=argo-root）或业务方明确
+# 要求自愈时才执行；普通业务应用生产规范是手动触发 sync。
+argocd app set <name> --sync-policy automated --auto-prune --self-heal
+```
+
+**「同步并等就绪」：**
+
+```bash
+argocd app sync <name> --prune --sync-option PruneLast=true
+argocd app wait <name> --health --timeout 300
+argocd app get <name> -o json | jq '.status.health.status, .status.sync.status'
+```
+
+**「回滚并验证」：**
+
+```bash
+argocd app history <name>
+argocd app rollback <name>          # 省略 HISTORY_ID = 回上一版本
+argocd app wait <name> --health --timeout 300
+```
+
+#### 2.3 危险命令二次确认（不可跳过）
+
+下列 5 类命令属于"不可逆 / 影响范围大"的危险操作，**必须**在用户完整复述资源标识符后才生成命令：
+
+| 危险命令 | 二次确认要求 |
+|---|---|
+| `argocd app delete <name>` / `argocd app delete --cascade` | 用户**完整复述** `<name>` 一次（大小写敏感） |
+| `argocd app terminate-op <name>` | 同上 |
+| `argocd cluster rm <ctx>` / `argocd repo rm <url>` / `argocd proj delete <name>` | 完整复述 + 显式提示「**此操作不可逆**」 |
+| `argocd app set <name> --sync-policy automated --self-heal` | 询问「**这是 Root 入口（argo-root）或业务方真的需要自愈吗？**」避免误开 |
+| 任何带 `--prune` / `--cascade` 标志的命令 | 询问影响范围（哪些资源会被回收） |
+
+> **逐行展开版**（按命令一行的完整清单）见 `references/cli-commands.md` 的「危险命令清单」章节——本节是按"风险类型"归并的 5 类视图，两边数量差是合并粒度不同，不是遗漏。
+
+**凭证约束（与 AGENTS.md 变量表一致）**：
+
+- `ARGOCD_AUTH_TOKEN` 永远**不回显**到命令、错误信息、stdout/stderr；缺失时直接 fail 并提示"请先 `argocd login` 或 export `ARGOCD_AUTH_TOKEN`"
+- `ARGOCD_SERVER` 同样**不要求用户明文粘贴**（应从 env 读，缺失则 fail）
+
+#### 2.4 会话内状态复用（短期 in-memory）
+
+在同一会话内，下列变量可在多条命令间自动复用（与 AGENTS.md 变量表的 `{{user.*}}` 占位符对齐）：
+
+| 变量 | 来源 | 复用范围 |
+|---|---|---|
+| `app_name` | 用户首次提供的 APPNAME | 后续所有 `argocd app <verb> <app_name>` 命令 |
+| `namespace` / `dest_namespace` | 首次 `app create` 的 `--dest-namespace` | 后续 `app create` / `app set` |
+| `project` | 首次 `app create` 的 `--project` | 后续所有命令 |
+| `repo_url` | 首次 `--repo` | 后续同仓库 `app create` |
+| `revision` | 首次 `--revision` | 后续 `app sync --revision` / `app rollback` |
+| `dest_server` | 首次 `--dest-server` | 后续所有命令（in-cluster 默认 `https://kubernetes.default.svc`） |
+
+**复用规则**：
+
+- 上条命令出现过的字段，下条命令省略时**自动沿用**
+- 输出命令时**首行标注**：「复用：app_name=my-app, namespace=production」
+- 跨会话**不持久**：下一会话用户必须重述（除非使用 sub-agent 跨会话传递）
+- 命中 2.3 危险命令时**不复用** APPNAME——必须重新复述确认
+
+> 完整协议与冲突优先原则见 `AGENTS.md`「会话内状态复用（短期 in-memory）」子节（含 5 条规则与凭证屏蔽边界说明）。本节是该协议在能力二的前台摘要。
+
+#### 2.5 命令吐出前自检 checklist（11 项，来自错误表）
+
+每条命令吐出前，**Agent 内部**必须对照下列 11 项跑一遍自检（这是给 agent 看的清单，不是给用户看的）。**任一项不通过 → 不输出命令，先修正**：
+
+- [ ] **必填未缺**：`--dest-server` / `--repo` / `--path` / `--dest-namespace` / `--revision` 不缺失
+- [ ] **Kustomize/Helm 不混用**：Kustomize 字段用 `--kustomize-*`，Helm 字段用 `--helm-*`，不可交叉
+- [ ] **GitHub 版本号带 v 前缀**：未指定时自动补 `v`（如 `v3.4.2`）
+- [ ] **前置 login 已确认**：`$ARGOCD_AUTH_TOKEN` / `$ARGOCD_SERVER` 已 export，否则提示 `argocd login`
+- [ ] **prune 不裸用**：出现 `--auto-prune` 时**必须同时**有 `--sync-policy automated`
+- [ ] **多源不强行转 CLI**：`spec.sources` 非 Helm+`$values` 模式时，回退 `kubectl apply -f`
+- [ ] **下划线已替换**：`metadata.name` 含 `_` 已替换为 `-`（git 分支名 `--revision k8s_mas` 除外）
+- [ ] **Root 入口必含 automated**：`destination.namespace=argo-root` 时必含 `--sync-policy automated --auto-prune --self-heal`
+- [ ] **运维组件不臆加 labels**：`k8s_ops/*` 94% 无 labels，禁止补 project/profile/stack/app 四件套
+- [ ] **业务应用不臆开 automated**：业务应用生产规范是手动 sync，**不主动加** `--sync-policy automated`
+- [ ] **CreateNamespace 保持原值**：运维组件多为 `CreateNamespace=false`（namespace 由 initns 管理），禁止转成 `true`
+
+> **与 cli-commands.md 的关系**：本 checklist 是「行为规则」（agent 内部约束），cli-commands.md 的「参数推断规则」是「输出规则」（命令字面如何补全）。两者**互不替代**——必须先过本 checklist，再按 cli-commands.md 补默认 flag。
 
 ### 能力三：Application Manifest 反向生成
 
