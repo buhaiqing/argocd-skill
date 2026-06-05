@@ -223,3 +223,6 @@ __marimo__/
 .trae/
 .pi/
 .codebuddy/
+
+# argocd_cli_gen output (when run from repo root)
+/out/
