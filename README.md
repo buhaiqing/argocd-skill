@@ -142,8 +142,3 @@ bash run_all.sh                       # 正式下发
 
 MIT — see [LICENSE](./LICENSE).
 
----
-
-镜像仓库 (Mirrored layout): [`aws-skills`](https://github.com/buhaiqing/aws-skills) ·
-[`hcloud-skills`](https://github.com/buhaiqing/hcloud-skills) ·
-[`another-aliyun-skills`](https://github.com/buhaiqing/another-aliyun-skills)
