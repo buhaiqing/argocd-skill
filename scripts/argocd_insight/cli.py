@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
-from . import snapshot_store, trend
+from . import snapshot_store, trend, config_compare
 
 
 def main() -> int:
@@ -103,6 +103,12 @@ def main() -> int:
     p_trend.add_argument("--metric", default="", help="指定分析的指标路径")
     p_trend.add_argument("--store-dir", default="", help="快照存储目录")
     p_trend.add_argument("--output", choices=["markdown", "json"], default="markdown")
+
+    # config-compare
+    p_cc = sub.add_parser("config-compare", help="配置对比与环境差异检测")
+    p_cc.add_argument("files", nargs="*", help="ArgoCD app JSON 文件路径")
+    p_cc.add_argument("--format", "-f", choices=["markdown", "json"], default="markdown")
+    p_cc.add_argument("--group", "-g", action="append", help="分组对比: name=app1,app2（可重复）")
 
     args = parser.parse_args()
 
@@ -205,6 +211,12 @@ def main() -> int:
             "--store-dir", args.store_dir,
             "--output", args.output,
         ])
+    elif args.command == "config-compare":
+        cmd = args.files + ["--format", args.format]
+        if args.group:
+            for g in args.group:
+                cmd += ["--group", g]
+        return config_compare.main(cmd)
     return 1
 
 
