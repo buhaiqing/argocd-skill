@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
-from . import snapshot_store, trend, config_compare
+from . import snapshot_store, trend, config_compare, predict
 
 
 def main() -> int:
@@ -109,6 +109,13 @@ def main() -> int:
     p_cc.add_argument("files", nargs="*", help="ArgoCD app JSON 文件路径")
     p_cc.add_argument("--format", "-f", choices=["markdown", "json"], default="markdown")
     p_cc.add_argument("--group", "-g", action="append", help="分组对比: name=app1,app2（可重复）")
+
+    # predict
+    p_pred = sub.add_parser("predict", help="风险预测（Revision 滞后 + 成本超支）")
+    p_pred.add_argument("files", nargs="*", help="ArgoCD app JSON 文件路径")
+    p_pred.add_argument("--format", "-f", choices=["markdown", "json"], default="markdown")
+    p_pred.add_argument("--budget", type=float, default=None, help="每应用预算上限 (USD)")
+    p_pred.add_argument("--type", choices=["all", "lag", "cost"], default="all", help="预测类型")
 
     args = parser.parse_args()
 
@@ -217,6 +224,11 @@ def main() -> int:
             for g in args.group:
                 cmd += ["--group", g]
         return config_compare.main(cmd)
+    elif args.command == "predict":
+        cmd = args.files + ["--format", args.format, "--type", args.type]
+        if args.budget is not None:
+            cmd += ["--budget", str(args.budget)]
+        return predict.main(cmd)
     return 1
 
 
