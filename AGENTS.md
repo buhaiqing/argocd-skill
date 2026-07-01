@@ -1,5 +1,20 @@
 <!-- Universal rules in ~/.config/opencode/AGENTS.md -->
 
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+在已索引的仓库（存在 `.codegraph/` 目录）中，**优先使用 CodeGraph** 而非 grep/Read/find 来定位和理解代码。
+
+**使用流程：**
+1. **先同步**：`codegraph sync [path]` 确保索引与磁盘一致
+2. **再查询**：`codegraph_explore`（MCP 工具）或 `codegraph explore`（CLI）返回相关符号的源码 + 调用链路，通常一次调用即可替代多轮 grep+Read
+3. **处理未同步文件**：如果查询结果顶部出现 `"⚠️ Some files referenced below were edited since the last index sync…"` 的横幅，横幅中列出的文件应直接用 `Read` 读取最新内容，不要依赖索引
+
+**优势：** 一次调用返回结构化的源码 + 调用链路 + 影响范围 (blast radius)，比多轮 grep+Read 节省 60-80% token，并且对动态分发 (dynamic dispatch, callback, JSX children) 的追踪比 grep 更准确。
+
+若仓库没有 `.codegraph/` 目录，则跳过 CodeGraph，用常规工具。索引是用户决定——不要主动运行 `codegraph init`。
+<!-- CODEGRAPH_END -->
+
 # AGENTS.md — argocd-skill
 
 Repo-specific guidance for OpenCode/AI agents working in the
