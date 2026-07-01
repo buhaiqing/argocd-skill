@@ -5,6 +5,35 @@ Repo-specific guidance for OpenCode/AI agents working in the
 would otherwise get wrong in **this** repo. It is not a general
 ArgoCD tutorial.
 
+## 【不容商量，严格遵守】功能点开发必须使用 Git Worktree + 子 Agent
+
+每个功能点的开发**必须**在独立的 Git Worktree 中启动子 Agent 完成。规则如下：
+
+1. **主 Agent 不直接在 main 分支上写代码**。收到开发任务后，先创建 worktree：
+   ```bash
+   git worktree add ../argocd-skill-<feature-name> -b feature/<feature-name>
+   ```
+2. **子 Agent 在 worktree 中独立完成开发**：编写代码、运行测试、Ruff 检查、提交
+3. **主 Agent 负责审查、合并、清理**：
+   - 子 Agent 完成后，主 Agent 审查 worktree 中的变更
+   - 合并到 main 分支
+   - 删除 worktree：`git worktree remove ../argocd-skill-<feature-name>`
+4. **每个功能点完成后，worktree 必须删除**——不允许残留 worktree 占用磁盘
+5. **例外**：仅 < 5 行的 typo 修复 / 注释改动可跳过 worktree，直接在 main 修改
+
+**反面教材：**
+```bash
+# ❌ 直接在 main 分支上写新功能
+cd /Users/bohaiqing/opensource/git/argocd-skill
+# 直接开始写代码...
+
+# ✅ 正确流程
+git worktree add ../argocd-skill-new-feature -b feature/new-feature
+cd ../argocd-skill-new-feature
+# 在 worktree 中开发 → 测试 → 提交
+# 回到主仓库审查 → 合并 → 删除 worktree
+```
+
 ## Current state
 
 The repository is **v0.2.0 (2026-06-04) — first-commit-clean, but
