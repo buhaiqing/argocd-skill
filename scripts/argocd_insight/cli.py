@@ -9,7 +9,7 @@ import os
 # 确保 argocd_insight 包内模块可导入
 sys.path.insert(0, os.path.dirname(__file__))
 
-from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push
+from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
 
 
 def main() -> int:
@@ -76,6 +76,19 @@ def main() -> int:
     p_rp.add_argument("--title", default="ArgoCD 报告", help="消息标题")
     p_rp.add_argument("--style", choices=["markdown", "json"], default="markdown")
 
+    # report-compose
+    p_rc = sub.add_parser("report-compose", help="合成多模块综合报告")
+    p_rc.add_argument("--include", default="diagnose,compliance,cost,health",
+                       help="逗号分隔的模块列表（默认: 全部）")
+    p_rc.add_argument("--project", help="项目过滤（传递给 diagnose/health）")
+    p_rc.add_argument("--output", choices=["markdown", "json"], default="markdown",
+                       help="输出格式（默认: markdown）")
+    p_rc.add_argument("--push", action="store_true", help="合成后自动推送")
+    p_rc.add_argument("--webhook", dest="webhook_url", default="", help="Webhook URL（推送时必填）")
+    p_rc.add_argument("--channel", choices=["feishu", "dingtalk", "slack"], default="",
+                       help="推送渠道（留空则自动检测）")
+    p_rc.add_argument("--title", default="ArgoCD 综合报告", help="推送消息标题")
+
     args = parser.parse_args()
 
     if args.command == "diagnose":
@@ -135,6 +148,21 @@ def main() -> int:
             + ["--title", args.title]
             + ["--style", args.style]
         )
+    elif args.command == "report-compose":
+        cmd = [
+            "--include", args.include,
+            "--output", args.output,
+            "--title", args.title,
+        ]
+        if args.project:
+            cmd += ["--project", args.project]
+        if args.push:
+            cmd.append("--push")
+        if args.webhook_url:
+            cmd += ["--webhook", args.webhook_url]
+        if args.channel:
+            cmd += ["--channel", args.channel]
+        return report_composer.main(cmd)
     return 1
 
 
