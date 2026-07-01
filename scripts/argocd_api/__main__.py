@@ -261,6 +261,105 @@ def cmd_manifests(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_create(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    import json as _json
+    if args.file:
+        spec = _json.loads(Path(args.file).read_text())
+    else:
+        spec = _json.loads(sys.stdin.read())
+    result = client.create_application(spec)
+    _pprint(result, args.json)
+    return 0
+
+
+def cmd_delete(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    confirm = input(f"[argocd-api] delete application '{args.app}'? Type 'yes': ")
+    if confirm.strip().lower() != "yes":
+        print("[argocd-api] aborted", file=sys.stderr)
+        return 1
+    result = client.delete_application(args.app, cascade=args.cascade)
+    print(stdjson.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_rollback(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    result = client.rollback_application(args.app, args.id)
+    _pprint(result, args.json)
+    return 0
+
+
+def cmd_terminate_op(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    result = client.terminate_operation(args.app)
+    _pprint(result, args.json)
+    return 0
+
+
+def cmd_whoami(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    info = client.get_account_info()
+    _pprint(info, args.json)
+    return 0
+
+
+def cmd_projects(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    projs = client.list_projects()
+    if not projs:
+        print("[argocd-api] no projects found")
+        return 0
+    if args.json:
+        print(stdjson.dumps(projs, indent=2, ensure_ascii=False))
+        return 0
+    for p in projs:
+        meta = p.get("metadata", {})
+        spec = p.get("spec", {})
+        name = meta.get("name", "")
+        desc = spec.get("description", "")
+        src_repos = spec.get("sourceRepos", [])
+        print(f"{name:<40} {desc:<30} src_repos={src_repos}")
+    print(f"\nTotal: {len(projs)} projects")
+    return 0
+
+
+def cmd_project(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    proj = client.get_project(args.name)
+    _pprint(proj, args.json)
+    return 0
+
+
+def cmd_clusters(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    clusters = client.list_clusters()
+    if not clusters:
+        print("[argocd-api] no clusters found")
+        return 0
+    if args.json:
+        print(stdjson.dumps(clusters, indent=2, ensure_ascii=False))
+        return 0
+    for c in clusters:
+        name = c.get("name", "")
+        server = c.get("server", "")
+        namespaces = c.get("namespaces", [])
+        ns_str = ",".join(namespaces) if namespaces else "*"
+        print(f"{name:<30} {server:<60} ns={ns_str}")
+    print(f"\nTotal: {len(clusters)} clusters")
+    return 0
+
+
+def cmd_repos(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    repos = client.list_repositories()
+    if not repos:
+        print("[argocd-api] no repos found")
+        return 0
+    if args.json:
+        print(stdjson.dumps(repos, indent=2, ensure_ascii=False))
+        return 0
+    for r in repos:
+        repo = r.get("repo", "")
+        type_ = r.get("type", "git")
+        project = r.get("project", "")
+        print(f"{repo:<80} type={type_:<5} project={project}")
+    print(f"\nTotal: {len(repos)} repos")
+    return 0
+
+
 # ------------------------------------------------------------------
 # Entry point
 # ------------------------------------------------------------------
@@ -339,6 +438,50 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("manifests", help="Get rendered manifests")
     p.add_argument("app")
     p.set_defaults(func=cmd_manifests)
+
+    # create
+    p = sub.add_parser("create", help="Create application from JSON (file or stdin)")
+    p.add_argument("-f", "--file", help="JSON spec file (omit for stdin)")
+    p.set_defaults(func=cmd_create)
+
+    # delete
+    p = sub.add_parser("delete", help="Delete an Application")
+    p.add_argument("app")
+    p.add_argument("--cascade", action="store_true", default=True,
+                   help="Cascade delete resources (default: true)")
+    p.set_defaults(func=cmd_delete)
+
+    # rollback
+    p = sub.add_parser("rollback", help="Rollback Application to a history ID")
+    p.add_argument("app")
+    p.add_argument("--id", type=int, required=True, help="History revision ID")
+    p.set_defaults(func=cmd_rollback)
+
+    # terminate-op
+    p = sub.add_parser("terminate-op", help="Terminate running operation")
+    p.add_argument("app")
+    p.set_defaults(func=cmd_terminate_op)
+
+    # whoami
+    p = sub.add_parser("whoami", help="Show current account info")
+    p.set_defaults(func=cmd_whoami)
+
+    # projects
+    p = sub.add_parser("projects", help="List AppProjects")
+    p.set_defaults(func=cmd_projects)
+
+    # project
+    p = sub.add_parser("project", help="Get AppProject details")
+    p.add_argument("name")
+    p.set_defaults(func=cmd_project)
+
+    # clusters
+    p = sub.add_parser("clusters", help="List managed clusters")
+    p.set_defaults(func=cmd_clusters)
+
+    # repos
+    p = sub.add_parser("repos", help="List configured repositories")
+    p.set_defaults(func=cmd_repos)
 
     args = parser.parse_args(argv)
 

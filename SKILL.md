@@ -8,8 +8,10 @@ description: |
   (4) 把整个 manifest 目录（如 argoapp 仓库、argo-apps/dly/production 等）批量反向生成 shell 脚本（迁移 / 重建 / 备份 / 灾备 / 新集群初始化 / GitOps 配置脚本化场景），调用内置工具 `python -m argocd_cli_gen`；
   (5) 处理 ArgoCD CLI 不支持的边界（多源 spec.sources $values、kustomize.patches/components 等），引导用户回退到 `kubectl apply -f` 兜底方案；
   (6) 通过 HTTP API（`/api/v1`）执行 ArgoCD 操作，适用于 CLI（含 login 及运行时命令）因 context path / insecure / grpc-web 失败时的自动回退，支持 `python -m argocd_api` 查询/操作应用、Pod、资源树。
-  (7) 诊断分析：批量 OutOfSync App 根因归因（Git 新增/手动漂移/内容不一致/孤儿资源），调用内置工具 `python -m argocd_deploy_stats.oos_analyzer`。
-  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, OutOfSync, 根因归因, 漂移检测, OOS 分析.
+  (7) 诊断分析：批量识别有问题的 App（OutOfSync / Degraded / Error / Missing），多维度诊断（资源层 / diff 层 / 事件层 / 历史层），输出根因 + 严重级别（critical/high/medium/low）+ 具体 action 命令，调用内置工具 `python -m argocd_insight diagnose`；
+  (8) 版本漂移检测：比对两个 ArgoCD 集群（或同一集群两个环境）同名 App 的 revision，输出漂移率、仅源端/目标端存在的 App，调用内置工具 `python -m argocd_insight drift`；
+  (9) 运行稳定性评估：8 维度打分（App 健康率 / 同步率 / 错误率 / 部署频率 / 自动化覆盖率 / 聚合入口完整性 / 多源冗余度 / 漂移复发率），输出总分 + 薄弱项 + 具体改进建议，调用内置工具 `python -m argocd_insight health`。
+  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
 

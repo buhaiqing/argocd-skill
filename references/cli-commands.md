@@ -467,6 +467,38 @@ argocd app get <name> -o json | jq '.status.sync.status'
 | `argocd account delete-token <token>` | 吊销某个认证令牌，可能导致依赖它的自动化脚本失效 | 「请复述 token 前 8 位确认」 |
 | `argocd app set --sync-policy automated --self-heal` | 开自愈，ArgoCD 会持续覆盖集群漂移 | 「这是 Root 入口或业务确实需要自愈吗？」 |
 
+## P1 智能诊断（聚合分析层）
+
+> 触发词：「所有 App 健康报告」「哪些 App 有问题」「部署频率」「谁部署最多」「最近部署了多少次」
+
+### 部署频率统计工具
+
+使用 `scripts/argocd_deploy_stats/stats.py`，依赖 Python 标准库（`concurrent.futures` 并发拉 history）：
+
+```bash
+# 最近 30 天部署频率统计（全量 566 App，约 3 分钟）
+python -m argocd_deploy_stats.stats --days 30
+
+# 只看最近 7 天（更快）
+python -m argocd_deploy_stats.stats --days 7
+
+# 只看某项目（更快）
+python -m argocd_deploy_stats.stats --project default --days 7
+
+# JSON 输出（供下游集成）
+python -m argocd_deploy_stats.stats --days 30 --output json
+
+# 调高并发（server 允许时加快）
+python -m argocd_deploy_stats.stats --days 30 --concurrency 20
+```
+
+**输出内容：**
+- 总 App 数 / 总部署次数
+- 按触发者（自动化 / 各用户名）部署次数
+- 最近 50 次部署详情（App / 时间 / 触发者 / Revision）
+
+---
+
 ## 开机自检（会话开头）
 
 每个会话处理第一条命令前，Agent 在内部（不在用户输出中）先做凭证自检。未通过则提示用户补全，不直接报错退出。

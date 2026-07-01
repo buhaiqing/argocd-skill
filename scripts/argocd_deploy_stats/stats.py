@@ -56,6 +56,7 @@ def build_report(apps: list[dict], days: int | None, project_filter: str | None,
     # 2. 并发拉 history
     import sys
     print(f"  fetching history for {len(filtered_apps)} apps (concurrency={concurrency})...", file=sys.stderr)
+    print("  [ponytail: 并发 8，566 App 预计 ~3min；并发提至 20 若 server 允许]", file=sys.stderr)
     app_histories = {}
     with ThreadPoolExecutor(max_workers=concurrency) as ex:
         futs = {ex.submit(fetch_history, a.get("metadata", {}).get("name", "")): a for a in filtered_apps}
@@ -93,7 +94,10 @@ def build_report(apps: list[dict], days: int | None, project_filter: str | None,
                 continue
             total_deploys += 1
             initiator = entry.get("initiatedBy", {})
-            who = initiator.get("username") or initiator.get("automated") or "unknown"
+            if initiator.get("automated"):
+                who = "automated"
+            else:
+                who = str(initiator.get("username") or "unknown")
             by_initiator[who] += 1
             by_project[project] += 1
             recent_deploys.append({
@@ -151,7 +155,7 @@ def main():
     p.add_argument("--days", type=int, default=None, help="只统计最近 N 天")
     p.add_argument("--project", type=str, default=None, help="只统计指定项目")
     p.add_argument("--output", choices=["markdown", "json"], default="markdown")
-    p.add_argument("--concurrency", type=int, default=20, help="并发数（默认 20）")
+    p.add_argument("--concurrency", type=int, default=8, help="并发数（默认 8，过高会触发 ArgoCD server 限流）")
     p.add_argument("--limit", type=int, default=None, help="最多统计 N 个 App（默认全部）")
     args = p.parse_args()
 

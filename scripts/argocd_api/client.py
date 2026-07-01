@@ -125,6 +125,18 @@ class ArgoCDClient:
         resp = self._get(f"/applications/{name}/manifests")
         return [json.loads(m) for m in resp.json().get("manifests", [])]
 
+    def create_application(self, app_spec: dict[str, Any]) -> dict[str, Any]:
+        """Create a new ArgoCD Application."""
+        return self._post("/applications", json=app_spec).json()
+
+    def delete_application(self, name: str, cascade: bool = True) -> dict[str, Any]:
+        """Delete an ArgoCD Application and optionally cascade to resources."""
+        return self._delete(f"/applications/{name}", params={"cascade": str(cascade).lower()}).json()
+
+    def get_application_events(self, name: str) -> list[dict[str, Any]]:
+        """Return events for an Application."""
+        return self._get(f"/applications/{name}/events").json().get("items", [])
+
     # ------------------------------------------------------------------
     # Resource-level operations
     # ------------------------------------------------------------------
@@ -192,6 +204,14 @@ class ArgoCDClient:
         """Refresh Application (re-evaluate sync state)."""
         return self._get(f"/applications/{name}", params={"refresh": True}).json()
 
+    def rollback_application(self, name: str, history_id: int) -> dict[str, Any]:
+        """Rollback Application to a previous sync history ID."""
+        return self._post(f"/applications/{name}/rollback", json={"id": history_id}).json()
+
+    def terminate_operation(self, name: str) -> dict[str, Any]:
+        """Terminate the currently running operation (sync/rollback)."""
+        return self._delete(f"/applications/{name}/operation").json()
+
     # ------------------------------------------------------------------
     # Pod helpers
     # ------------------------------------------------------------------
@@ -211,6 +231,36 @@ class ArgoCDClient:
                     node["app_name"] = app_name
                     return node
         return None
+
+    # ------------------------------------------------------------------
+    # Projects
+    # ------------------------------------------------------------------
+    def list_projects(self) -> list[dict[str, Any]]:
+        """Return all ArgoCD AppProjects."""
+        return self._get("/projects").json().get("items", [])
+
+    def get_project(self, name: str) -> dict[str, Any]:
+        """Return a single AppProject."""
+        return self._get(f"/projects/{name}").json()
+
+    def create_project(self, project_spec: dict[str, Any]) -> dict[str, Any]:
+        """Create a new AppProject."""
+        return self._post("/projects", json=project_spec).json()
+
+    # ------------------------------------------------------------------
+    # Account / Clusters / Repositories
+    # ------------------------------------------------------------------
+    def get_account_info(self) -> dict[str, Any]:
+        """Return current user account info."""
+        return self._get("/account").json()
+
+    def list_clusters(self) -> list[dict[str, Any]]:
+        """Return all managed clusters."""
+        return self._get("/clusters").json().get("items", [])
+
+    def list_repositories(self) -> list[dict[str, Any]]:
+        """Return all configured repositories."""
+        return self._get("/repositories").json().get("items", [])
 
     # ------------------------------------------------------------------
     # Low-level HTTP

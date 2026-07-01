@@ -87,16 +87,14 @@
 | 层级 | 已实现 | 待实现 |
 |------|--------|--------|
 | 执行层 | **App**：create/delete/sync/rollback/set/patch/delete-resource/refresh/unset/edit/terminate-op/logs/events/diff/history/wait/add-source/remove-source；**Project**：create/delete/edit/get/list/add-source/remove-source/add-dest/remove-dest/set；**ApplicationSet**：get/list/create/delete/generate；**Account**：get-user-info/generate-token/delete-token/list/update-password/can-i；**Repo/Cluster**：add/list/get/rm；**YAML→CLI/批量工具/健康报告** | — |
-| 诊断层 | **OutOfSync 根因归因**（Git新增/手动漂移/内容不一致/孤儿资源） | Sync 历史统计 / 漂移检测 / 版本一致性检查 |
-| 优化层 | — | 合规检查 / 成本估算 / 多集群对比 / Git 源健康检查 / 报告推送 |
+| 诊断层 | **diagnose**：8 类问题诊断（OutOfSync/Degraded/Error/Missing），多维度归因，action 命令；**drift**：跨集群版本漂移检测；**health**：8 维度稳定性打分 + 改进建议 | Sync 历史统计 / 合规检查 / Git 源健康检查 |
+| 优化层 | — | 成本估算 / 多集群对比 / 报告推送 |
 
 ### 缺口池（下一步优先级）
 
 | 缺口 | 来源 | 优先级 | 目标版本 |
 |------|------|--------|----------|
-| Sync 历史统计 | 用户需求 | P1 | v0.3.x |
-| 漂移检测 | 用户需求 | P1 | v0.3.x |
-| 版本一致性检查 | 用户需求 | P1 | v0.3.x |
+| Sync 历史统计 | 用户需求 | P2 | v0.4.0 |
 
 ### 范围定义
 
@@ -130,6 +128,6 @@ regression 回滚：`git revert <bad-commit> && git tag -d vX.Y.Z && git push or
 | 2026-07-01 上午 | v0.2.1 | P0 执行层初步补完：delete-resource / logs / events / diff / set+patch / 健康报告。67/67 测试通过 |
 | 2026-07-01 下午 | v0.2.2 | 执行层全面覆盖：refresh/unset/edit/terminate-op/多源/proj全命令/appset全命令/account全命令/repo+cluster全命令。SKILL.md 能力表 25 条全映射。67/67 测试通过 |
 | 2026-07-01 下午 | v0.2.3 | SKILL.md 新增准则五（Ponytail 最小代码优先）；EVOLUTION.md 质量门更新；TODO.md 重建结构 |
-| 2026-07-01 下午 | v0.2.x | 诊断层工具原型：argocd_deploy_stats 部署频率统计，30 App 16s 实测通过，WIP |
+| 2026-07-01 | v0.3.0 | 诊断层 + 智能层正式发布：diagnose（8 类诊断+action）/ drift（跨集群版本比对）/ health（8 维度打分+改进建议）。143/143 测试通过。新增脚本：argocd_insight/{diagnose,drift,health}.py + cli.py；新增测试：test_diagnose.py (6) / test_drift.py (10) / test_health.py (11)。SKILL.md 能力(7)(8)(9)。|
 | 2026-07-01 | v0.2.4 | 范围定义 + 版本 SOP + 缺口池补充目标版本；回滚路径补全 |
 | 2026-07-01 | v0.3.0 | **P1-1 OutOfSync 根因归因交付**：oos_analyzer.py 代码加固（timeout/双格式diff/ponytail标记）+ 16例测试 + SKILL.md 集成（能力四+触发词+错误表） |

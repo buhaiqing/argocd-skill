@@ -305,6 +305,54 @@ LLM 端预检话术示例（agent 视角，不是给用户看的代码）：
 [ok] 会话就绪，可执行写操作
 ```
 
+### CLI 运行时回退协议（任何命令失败 → API 自动重试）
+
+预检通过后，Agent 生成的**任何** `argocd` CLI 命令执行失败时，必须自动回退到 `python -m argocd_api` 等价命令重试，**不得仅报错退出**。
+
+**回退流程：**
+
+```
+用户描述意图
+  ↓
+Agent 生成 CLI 命令（argocd app sync my-app --prune）
+  ↓
+用户执行并反馈失败（context path / grpc-web / 证书 / 超时）
+  ↓
+Agent 自动输出等价 API 命令
+  python -m argocd_api sync my-app
+  ↓
+API 结果格式化输出（与 CLI 对齐）
+```
+
+**回退映射表（Agent 必须熟记）：**
+
+| 用户意图 | CLI 命令 | API 回退命令 |
+|----------|---------|-------------|
+| 应用列表 | `argocd app list` | `python -m argocd_api list` |
+| 应用详情 | `argocd app get <name>` | `python -m argocd_api get <name>` |
+| 同步 | `argocd app sync <name>` | `python -m argocd_api sync <name>` |
+| 刷新 | `argocd app refresh <name>` | `python -m argocd_api refresh <name>` |
+| Manifest | `argocd app manifests <name>` | `python -m argocd_api manifests <name>` |
+| 创建应用 | `argocd app create <name>` | `python -m argocd_api create <name> -f <spec.json>` |
+| 回滚 | `argocd app rollback <name> <id>` | `python -m argocd_api rollback <name> --id <id>` |
+| 资源树 | `argocd app resources <name>` | `python -m argocd_api resource-tree <name>` |
+| 删除资源 | `argocd app delete-resource <name>` | `python -m argocd_api delete-resource <name>` |
+| 终止操作 | `argocd app terminate-op <name>` | `python -m argocd_api terminate-op <name>` |
+
+**3 条铁律：**
+
+1. **自动匹配，不等待用户提示**：CLI 失败后 Agent 自行判断等价的 API 命令并直接输出，不需用户说"换 API 试试"。
+2. **结果格式对齐**：API 输出格式尽量与 CLI 一致（同字段名、同排序），让用户感觉是同一工具在运作。
+3. **API 也不支持 → `kubectl`**：若该操作无对应 API（如 `argocd app logs`），输出 `kubectl` 兜底并说明原因。
+
+**话术模板：**
+
+```
+⚠️ CLI 执行失败（context path 解析错误），已回退 HTTP API
+→ python -m argocd_api sync my-app
+✅ 同步成功：my-app → Synced / Healthy
+```
+
 ## App-of-Apps 4-tier production model
 
 Encoded in both `SKILL.md` (Markdown table) and
