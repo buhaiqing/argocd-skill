@@ -24,8 +24,8 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone, timedelta
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -236,10 +236,10 @@ def diagnose_app(app_name: str, app_spec: dict) -> Optional[Diagnosis]:
         f_evts = ex.submit(_fetch_events, app_name)
         f_hist = ex.submit(_fetch_history, app_name)
 
-        res_rc, res_out = f_res.result()[0], f_res.result()[1]
+        _, res_out = f_res.result()[0], f_res.result()[1]
         diff_rc, diff_out = f_diff.result()[0], f_diff.result()[1]
-        evts_rc, evts_out = f_evts.result()[0], f_evts.result()[1]
-        hist_rc, hist_out = f_hist.result()[0], f_hist.result()[1]
+        _, evts_out = f_evts.result()[0], f_evts.result()[1]
+        _, hist_out = f_hist.result()[0], f_hist.result()[1]
 
     orphaned, unhealthy = _parse_resources(res_out)
     diff_info = _parse_diff(diff_out)
@@ -779,7 +779,7 @@ def print_markdown(report: dict):
                 print(f"- **症状**: {'; '.join(d['symptoms'])}")
             if d.get("risk_note"):
                 print(f"⚠️ {d['risk_note']}")
-            print(f"\n**建议操作**（按优先级）:")
+            print("\n**建议操作**（按优先级）:")
             for a in d["actions"]:
                 print(f"  {_action_md(a)}")
             print()

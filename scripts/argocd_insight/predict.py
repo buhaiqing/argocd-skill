@@ -117,7 +117,6 @@ def compute_lag_risk(app_data: dict[str, Any]) -> dict[str, Any]:
         score += 20
 
     # Factor 4: Pending changes
-    health = status.get("health", {})
     sync_status = status.get("sync", {}).get("status", "")
     if sync_status == "OutOfSync":
         factors.append({
@@ -186,7 +185,6 @@ def compute_cost_overrun_risk(
     # Try to extract from Helm values
     helm = source.get("helm", {})
     if helm:
-        values_str = helm.get("values", "")
         parameters = helm.get("parameters", [])
 
         # Parse Helm parameters for resource hints
@@ -301,8 +299,8 @@ def predict_batch(
         cost_risks.append(cost)
 
     # Sort by risk score descending
-    lag_risks.sort(key=lambda x: -x["risk_score"])
-    cost_risks.sort(key=lambda x: -x["risk_score"])
+    lag_risks.sort(key=lambda x: x["risk_score"], reverse=True)
+    cost_risks.sort(key=lambda x: x["risk_score"], reverse=True)
 
     # Summary stats
     critical_lag = sum(1 for r in lag_risks if r["risk_level"] == "critical")

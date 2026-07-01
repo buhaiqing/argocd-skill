@@ -26,9 +26,7 @@ import json
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Iterator
 
 # ---------------------------------------------------------------------------
 # 数据模型
@@ -268,20 +266,20 @@ def to_json(report: DriftReport) -> str:
 
 def to_markdown(report: DriftReport, from_label: str, to_label: str) -> str:
     """生成可读 Markdown 报告。"""
-    import io, sys
+    import io
     buf = io.StringIO()
 
     def p(line="", file=None):
         print(line, file=file)
 
-    p(f"# ArgoCD 版本漂移检测报告\n")
+    p("# ArgoCD 版本漂移检测报告\n")
     p(f"**比对**：{from_label} → {to_label}")
     p(f"**时间**：{__import__('datetime').datetime.now().isoformat()}\n")
 
     s = report.summary
-    p(f"## 统计概览\n")
-    p(f"| 指标 | 值 |")
-    p(f"|------|---|")
+    p("## 统计概览\n")
+    p("| 指标 | 值 |")
+    p("|------|---|")
     p(f"| 比对 App 总数 | {s['total']} |")
     p(f"| 版本一致（Synced） | {s['synced']} |")
     p(f"| 版本漂移（Drifted） | {s['drifted']} |")
@@ -290,9 +288,9 @@ def to_markdown(report: DriftReport, from_label: str, to_label: str) -> str:
     p(f"| 仅目标端有 | {s['targetOnly']} |")
 
     if report.matched:
-        p(f"\n## 漂移 App 详情（按 revision 分组）\n")
+        p("\n## 漂移 App 详情（按 revision 分组）\n")
         p(f"| App | 项目 | {from_label} | {to_label} | 状态 | {from_label} 健康 | {to_label} 健康 |")
-        p(f"|-----|------|--------|--------|------|------------|------------|")
+        p("|-----|------|--------|--------|------|------------|------------|")
         # 先漂移后一致，减少需要关注的信息量
         for entry in sorted(report.matched.values(),
                             key=lambda e: (e.status != "drifted", e.name)):

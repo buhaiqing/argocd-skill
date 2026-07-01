@@ -38,22 +38,18 @@ MODULES = {
     "diagnose": {
         "module": diagnose,
         "help": "问题 App 智能诊断",
-        "extra_args": [],
     },
     "compliance": {
         "module": compliance,
         "help": "配置合规检查",
-        "extra_args": [],
     },
     "cost": {
         "module": cost,
         "help": "资源成本估算",
-        "extra_args": [],
     },
     "health": {
         "module": health,
         "help": "运行稳定性评估",
-        "extra_args": [],
     },
 }
 
@@ -191,7 +187,7 @@ def _compose_markdown(
     parts.append("")
 
     # 时间戳
-    parts.append(f"> 生成时间: {datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}")
+    parts.append(f"> 生成时间: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}")
     parts.append("")
 
     # 摘要表
@@ -214,7 +210,7 @@ def _compose_json(
     return {
         "report": {
             "title": f"ArgoCD 综合报告{f' — {project}' if project else ''}",
-            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "generated_at": datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             "project": project,
         },
         "modules": {name: data for name, data in results.items()},

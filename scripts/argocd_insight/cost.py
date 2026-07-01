@@ -225,14 +225,14 @@ def build_report(apps: list[dict]) -> dict:
 
 
 def print_markdown(report: dict):
-    print(f"# ArgoCD 资源成本估算报告\n")
+    print("# ArgoCD 资源成本估算报告\n")
     print(f"生成时间：{report['generatedAt']}")
     print(f"成本模型：CPU ${report['costModel']['cpuPerVcpuHour']}/vCPU-hr，"
           f"Memory ${report['costModel']['memPerGiBHour']}/GiB-hr\n")
 
-    print(f"## 总览\n")
-    print(f"| 指标 | 值 |")
-    print(f"|------|-----|")
+    print("## 总览\n")
+    print("| 指标 | 值 |")
+    print("|------|-----|")
     print(f"| App 总数 | {report['totalApps']} |")
     print(f"| CPU 总量 | {report['totalCpuCores']} cores |")
     print(f"| Memory 总量 | {report['totalMemoryGiB']} GiB |")
@@ -242,9 +242,9 @@ def print_markdown(report: dict):
 
     top10 = report.get("top10", [])
     if top10:
-        print(f"\n## Top 10 高成本 App\n")
-        print(f"| 排名 | App | Project | CPU (cores) | Memory (GiB) | 副本 | 月成本 |")
-        print(f"|------|-----|---------|-------------|--------------|------|--------|")
+        print("\n## Top 10 高成本 App\n")
+        print("| 排名 | App | Project | CPU (cores) | Memory (GiB) | 副本 | 月成本 |")
+        print("|------|-----|---------|-------------|--------------|------|--------|")
         for i, app in enumerate(top10, 1):
             monthly = round(app["totalCostHourly"] * 24 * 30, 2)
             print(f"| {i} | {app['app']} | {app['project']} | "

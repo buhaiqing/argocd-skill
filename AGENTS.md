@@ -632,6 +632,41 @@ def get_health_score(data: dict) -> float:
     return float(data.get("health", {}).get("score", 0))
 ```
 
+## [IMPORTANT] Ruff 代码质量检查 (Ruff code quality check)
+
+每次代码变更后，**必须**运行 Ruff 检查并修复所有问题：
+
+```bash
+# 先 auto-fix 可修复项
+ruff check --fix scripts/argocd_insight/ 2>&1
+
+# 再手动修复剩余项（F841 未使用变量、E701 单行多语句等）
+ruff check scripts/argocd_insight/ 2>&1
+```
+
+**流程：**
+1. 代码改动完成后，立即运行 `ruff check --fix` 自动修复
+2. 检查剩余错误，手动修复（或用 `--unsafe-fixes` 处理隐藏修复）
+3. 再次运行 `ruff check` 确认 **All checks passed**
+4. 零 error 才允许提交
+
+**常见需手动修复的错误类型：**
+- `F841` — 未使用的局部变量 → 删除或改为 `_`
+- `F821` — 未定义的变量名 → 检查变量是否被其他逻辑引用
+- `E701` — 单行多语句 → 拆分为多行
+
+**反面教材：**
+```python
+# ❌ 忽略 ruff 检查直接提交
+res_rc, res_out = f_res.result()  # F841: res_rc 未使用
+if score >= 90: return "🟢"      # E701: 单行多语句
+
+# ✅ 修复后提交
+_, res_out = f_res.result()
+if score >= 90:
+    return "🟢"
+```
+
 ## Cross-skill delegation (provisional)
 
 | Task | Delegate to |

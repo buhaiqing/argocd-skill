@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .snapshot_store import SnapshotStore
@@ -22,22 +21,6 @@ def _extract_number(data: Any, *path: str) -> float | None:
         return float(current)
     return None
 
-
-def _count_by_severity(module_data: Any, severity: str) -> int:
-    """统计模块数据中指定严重级别的数量。"""
-    if module_data is None:
-        return 0
-
-    items: list[dict] = []
-    if isinstance(module_data, dict):
-        for key in ("apps", "risks", "results", "items"):
-            if key in module_data and isinstance(module_data[key], list):
-                items = module_data[key]
-                break
-    elif isinstance(module_data, list):
-        items = module_data
-
-    return sum(1 for item in items if item.get("severity") == severity)
 
 
 def compute_delta(
@@ -117,8 +100,9 @@ def analyze_trend(
     if not all_ts:
         return {"error": "无历史快照数据"}
 
-    cutoff = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    recent_ts = [ts for ts in all_ts if ts >= cutoff[:len(ts)]]
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_str = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    recent_ts = [ts for ts in all_ts if ts >= cutoff_str]
 
     if len(recent_ts) < 2:
         recent_ts = all_ts[-min(len(all_ts), 30):]

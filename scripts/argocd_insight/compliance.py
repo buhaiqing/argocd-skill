@@ -98,7 +98,7 @@ def check_app(app: dict) -> list[dict]:
             "rule": "system-namespace",
             "severity": "high",
             "message": f"部署到了系统 namespace: {ns}",
-            "suggestion": f"确认是否必要，或调整 App 目标 namespace",
+            "suggestion": "确认是否必要，或调整 App 目标 namespace",
         })
 
     return risks
@@ -136,13 +136,13 @@ def build_report(apps: list[dict], min_severity: str = "low") -> dict:
 
 
 def print_markdown(report: dict):
-    print(f"# ArgoCD 配置合规报告\n")
+    print("# ArgoCD 配置合规报告\n")
     print(f"生成时间：{report['generatedAt']}")
     print(f"总 App 数：{report['totalApps']}，有风险：{report['riskyApps']}，风险项：{report['totalRisks']}\n")
 
     sev = report.get("bySeverity", {})
-    print(f"| 严重级别 | 风险 App 数 |")
-    print(f"|----------|-----------|")
+    print("| 严重级别 | 风险 App 数 |")
+    print("|----------|-----------|")
     for s in ["high", "medium", "low"]:
         if s in sev:
             print(f"| {s} | {sev[s]} |")

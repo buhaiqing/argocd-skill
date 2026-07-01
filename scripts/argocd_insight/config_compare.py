@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any
 
 
@@ -92,7 +92,11 @@ def diff_configs(
     diffs: list[dict[str, str]] = []
 
     def _compare(a: Any, b: Any, prefix: str) -> None:
-        if type(a) != type(b):
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            if a != b:
+                diffs.append({"path": prefix, "a": str(a), "b": str(b)})
+            return
+        if not isinstance(a, type(b)):
             diffs.append({"path": prefix, "a": str(a), "b": str(b)})
             return
         if isinstance(a, dict):
@@ -156,7 +160,7 @@ def compare_applications(
             continue
 
         # Compare all pairs in the group
-        all_diffs: dict[str, int] = {}
+        all_diffs: Counter[str] = Counter()
         for i in range(len(app_names)):
             for j in range(i + 1, len(app_names)):
                 a_name, b_name = app_names[i], app_names[j]
@@ -166,14 +170,10 @@ def compare_applications(
                     normalized[a_name], normalized[b_name],
                     label_a=a_name, label_b=b_name,
                 )
-                for d in pair_diffs:
-                    path = d["path"]
-                    if path not in all_diffs:
-                        all_diffs[path] = 0
-                    all_diffs[path] += 1
+                all_diffs.update(d["path"] for d in pair_diffs)
 
         # Sort by frequency (most common diffs first)
-        sorted_diffs = sorted(all_diffs.items(), key=lambda x: -x[1])
+        sorted_diffs = all_diffs.most_common()
 
         results["groups"][group_name] = {
             "apps": app_names,

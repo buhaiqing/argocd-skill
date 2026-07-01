@@ -34,9 +34,8 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +419,7 @@ def _calc_drift_recurrence(apps: list[dict], concurrency: int = 4) -> DimensionS
 
     findings = [f"OOS 总数: {len(oos_apps)}，反复漂移（≥3次/月）: {len(recurrent)}"]
     if recurrent:
-        findings.append(f"复发 App: " + ", ".join(
+        findings.append("复发 App: " + ", ".join(
             f"{n}({c}次)" for n, c in sorted(recurrent, key=lambda x: -x[1])[:5]
         ) + (" ..." if len(recurrent) > 5 else ""))
 
@@ -512,9 +511,12 @@ def build_report(
 
 
 def _score_color(score: int) -> str:
-    if score >= 90: return "🟢"
-    if score >= 70: return "🟡"
-    if score >= 50: return "🟠"
+    if score >= 90:
+        return "🟢"
+    if score >= 70:
+        return "🟡"
+    if score >= 50:
+        return "🟠"
     return "🔴"
 
 
@@ -523,7 +525,7 @@ def _level_label(level: str) -> str:
 
 
 def print_markdown(report: HealthReport):
-    print(f"# ArgoCD 运行稳定性评估报告\n")
+    print("# ArgoCD 运行稳定性评估报告\n")
     print(f"生成时间：{report.generated_at}")
     print(f"评估 App 数：{report.total_apps}\n")
 
@@ -532,16 +534,16 @@ def print_markdown(report: HealthReport):
     print(f"{report.summary}\n")
 
     # 维度表格
-    print(f"## 维度评分\n")
-    print(f"| 维度 | 分数 | 级别 | 详情 |")
-    print(f"|------|------|------|------|")
+    print("## 维度评分\n")
+    print("| 维度 | 分数 | 级别 | 详情 |")
+    print("|------|------|------|------|")
     for d in sorted(report.dimensions, key=lambda x: (x.level == "info", x.level == "warning", x.score)):
         print(f"| {d.name} | {_score_color(d.score)} {d.score} | {_level_label(d.level)} | {d.detail} |")
 
     # 薄弱项详细分析
     weak = [d for d in report.dimensions if d.level in ("critical", "warning")]
     if weak:
-        print(f"\n## 薄弱项详细分析\n")
+        print("\n## 薄弱项详细分析\n")
         for d in weak:
             print(f"### {_score_color(d.score)} {d.name}（{d.score}/100，{_level_label(d.level)}）\n")
             if d.findings:
@@ -560,7 +562,7 @@ def print_markdown(report: HealthReport):
         for s in d.suggestions
     ]
     if all_suggestions:
-        print(f"## 改进建议汇总（按优先级）\n")
+        print("## 改进建议汇总（按优先级）\n")
         printed: set[str] = set()
         for dim_name, suggestion in all_suggestions:
             key = suggestion[:40]
@@ -568,10 +570,10 @@ def print_markdown(report: HealthReport):
                 printed.add(key)
                 print(f"- [{dim_name}] {suggestion}")
 
-    print(f"\n---\n")
-    print(f"评估维度：D1=App健康率(20%), D2=同步率(20%), D3=错误率(15%), "
-          f"D4=部署频率(10%), D5=自动化覆盖(10%), "
-          f"D6=聚合入口(10%), D7=多源冗余(5%), D8=漂移复发(10%)")
+    print("\n---\n")
+    print("评估维度：D1=App健康率(20%), D2=同步率(20%), D3=错误率(15%), "
+          "D4=部署频率(10%), D5=自动化覆盖(10%), "
+          "D6=聚合入口(10%), D7=多源冗余(5%), D8=漂移复发(10%)")
 
 
 # ---------------------------------------------------------------------------

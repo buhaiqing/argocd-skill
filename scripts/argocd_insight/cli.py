@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
-from . import snapshot_store, trend, config_compare, predict
+from . import trend, config_compare, predict
 from .snapshot_store import SnapshotStore
 
 

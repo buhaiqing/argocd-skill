@@ -11,8 +11,7 @@ import argparse
 import json
 import subprocess
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -132,11 +131,10 @@ def print_markdown(report: dict):
         cx_emoji = "✅" if cx_status == "reachable" else "⚠️" if "unreachable" in cx_status else "❓"
         note = cx.get("error", "")[:30] if cx.get("error") else ""
         repo_name = url.split("/")[-1].replace(".git", "")
-        revs = ", ".join(info["revisions"][:3])
         print(f"| `{repo_name}` | {info['appCount']} | {conn_emoji} {conn} | {cx_emoji} | {note} |")
 
-    print(f"\n> 注：Agent 侧不可达可能是 credential helper 未配置，ArgoCD server 侧凭证独立。")
-    print(f"> 如需检查分支存在性，需在 ArgoCD server 有凭证的环境运行 `git ls-remote --heads <repo> <branch>`。")
+    print("\n> 注：Agent 侧不可达可能是 credential helper 未配置，ArgoCD server 侧凭证独立。")
+    print("> 如需检查分支存在性，需在 ArgoCD server 有凭证的环境运行 `git ls-remote --heads <repo> <branch>`。")
 
 
 def main(argv: list[str] | None = None) -> int:

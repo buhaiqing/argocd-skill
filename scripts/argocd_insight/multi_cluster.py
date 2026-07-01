@@ -24,7 +24,6 @@ import json
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 # ponytail: 复用 drift 模式的基础设施，扩展对比维度。
@@ -351,14 +350,14 @@ def to_markdown(report: ComparisonReport, from_label: str, to_label: str) -> str
     lines = []
     def p(line=""): lines.append(line)
 
-    p(f"# ArgoCD 多集群对比报告\n")
+    p("# ArgoCD 多集群对比报告\n")
     p(f"**比对**：{from_label} → {to_label}")
     p(f"**时间**：{__import__('datetime').datetime.now().isoformat()}\n")
 
     s = report.summary
-    p(f"## 统计概览\n")
-    p(f"| 指标 | 值 |")
-    p(f"|------|---|")
+    p("## 统计概览\n")
+    p("| 指标 | 值 |")
+    p("|------|---|")
     p(f"| 比对 App 总数 | {s['total']} |")
     p(f"| 版本一致（Synced） | {s['synced']} |")
     p(f"| 版本漂移（Drifted） | {s['drifted']} |")
@@ -374,7 +373,7 @@ def to_markdown(report: ComparisonReport, from_label: str, to_label: str) -> str
         if drifted:
             p(f"\n## 版本漂移 App（{len(drifted)} 个）\n")
             p(f"| App | 项目 | {from_label} | {to_label} | 状态 |")
-            p(f"|-----|------|--------|--------|------|")
+            p("|-----|------|--------|--------|------|")
             for e in sorted(drifted, key=lambda x: x.name):
                 p(f"| `{e.name}` | {e.project} | `{e.from_revision}` | `{e.to_revision}` | ⚠️ drifted |")
 
@@ -383,7 +382,7 @@ def to_markdown(report: ComparisonReport, from_label: str, to_label: str) -> str
         if health_diffs:
             p(f"\n## 健康状态差异（{len(health_diffs)} 个）\n")
             p(f"| App | {from_label} 健康 | {to_label} 健康 |")
-            p(f"|-----|------------|------------|")
+            p("|-----|------------|------------|")
             for e in sorted(health_diffs, key=lambda x: x.name):
                 p(f"| `{e.name}` | {e.from_health} | {e.to_health} |")
 
@@ -393,7 +392,7 @@ def to_markdown(report: ComparisonReport, from_label: str, to_label: str) -> str
         if resource_diffs:
             p(f"\n## 资源配置差异（{len(resource_diffs)} 个）\n")
             p(f"| App | {from_label} CPU | {to_label} CPU | {from_label} Mem | {to_label} Mem |")
-            p(f"|-----|--------|--------|--------|--------|")
+            p("|-----|--------|--------|--------|--------|")
             for e in sorted(resource_diffs, key=lambda x: -abs(x.cpu_diff)):
                 p(f"| `{e.name}` | {e.from_cpu}c | {e.to_cpu}c | {e.from_memory}G | {e.to_memory}G |")
 
