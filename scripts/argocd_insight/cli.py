@@ -10,6 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
+from . import snapshot_store, trend
 
 
 def main() -> int:
@@ -89,6 +90,20 @@ def main() -> int:
                        help="推送渠道（留空则自动检测）")
     p_rc.add_argument("--title", default="ArgoCD 综合报告", help="推送消息标题")
 
+    # snapshot
+    p_snap = sub.add_parser("snapshot", help="采集快照")
+    p_snap.add_argument("--include", default="diagnose,compliance,cost,health",
+                         help="逗号分隔的模块列表（默认: 全部）")
+    p_snap.add_argument("--project", help="项目过滤（传递给 diagnose/health）")
+    p_snap.add_argument("--store-dir", default="", help="快照存储目录")
+
+    # trend
+    p_trend = sub.add_parser("trend", help="趋势分析")
+    p_trend.add_argument("--days", type=int, default=7, help="分析最近 N 天（默认 7）")
+    p_trend.add_argument("--metric", default="", help="指定分析的指标路径")
+    p_trend.add_argument("--store-dir", default="", help="快照存储目录")
+    p_trend.add_argument("--output", choices=["markdown", "json"], default="markdown")
+
     args = parser.parse_args()
 
     if args.command == "diagnose":
@@ -163,6 +178,33 @@ def main() -> int:
         if args.channel:
             cmd += ["--channel", args.channel]
         return report_composer.main(cmd)
+    elif args.command == "snapshot":
+        from . import report_composer as _rc
+        from .snapshot_store import SnapshotStore
+        import io
+        includes = [s.strip() for s in args.include.split(",") if s.strip()]
+        results = {}
+        for name in includes:
+            if name not in _rc.MODULES:
+                results[name] = None
+                continue
+            mod_entry = _rc.MODULES[name]
+            argv = ["--output", "json"]
+            if args.project and name in ("diagnose", "health"):
+                argv += ["--project", args.project]
+            data = _rc._capture_json(mod_entry["module"], argv)
+            results[name] = data
+        store = SnapshotStore(args.store_dir if args.store_dir else None)
+        path = store.save(results)
+        print(f"✓ 快照已保存: {path}", file=sys.stderr)
+        return 0
+    elif args.command == "trend":
+        return trend.main([
+            "--days", str(args.days),
+            "--metric", args.metric,
+            "--store-dir", args.store_dir,
+            "--output", args.output,
+        ])
     return 1
 
 
