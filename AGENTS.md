@@ -416,7 +416,7 @@ After **any** change to `SKILL.md` or its `references/` / `scripts/`:
 Report `[OK] argocd-skill v0.1.0 — N rounds clean` when round N
 finds no new issues.
 
-## 自动化测试要求 (Automated testing requirements)
+## [IMPORTANT] 自动化测试要求 (Automated testing requirements)
 
 每个功能点开发完成后，**必须**执行一轮完整的自动化测试，并修复发现的问题，确保功能回归质量稳定、功能迭代平稳推进。
 
@@ -504,7 +504,7 @@ def test_pct_change_property(first, last):
 - 过大的测试数据 fixture
 - 重复的 setup/teardown 开销
 
-## 性能极致优化要求 (Performance optimization to the extreme)
+## [IMPORTANT] 性能极致优化要求 (Performance optimization to the extreme)
 
 在保障功能正确的前提下，**尽可能做到高性能，优化到极致**。每个功能点开发完成并通过测试后，**必须**重新复盘性能表现，发现优化空间则立即调优。
 
