@@ -22,19 +22,14 @@ class TestCaptureJson:
     def test_capture_valid_json(self):
         mock_mod = MagicMock()
         mock_mod.main.side_effect = lambda argv: None
-        import sys
         import io
-
-        old = sys.stdout
-        sys.stdout = buf = io.StringIO()
-        print('{"key": "value"}')
-        sys.stdout = old
-
+        buf = io.StringIO()
+        buf.write('{"key": "value"}')
+        buf.seek(0)
+        mock_mod.main.side_effect = lambda argv: None
         with patch("argocd_insight.report_composer.sys.stdout", buf):
-            mock_mod.main.return_value = 0
             result = _capture_json(mock_mod, ["--output", "json"])
-
-        assert result is None  # patched stdout doesn't affect real capture
+        assert result is None
 
     def test_capture_none_on_empty(self):
         mock_mod = MagicMock()
@@ -44,18 +39,13 @@ class TestCaptureJson:
 
     def test_capture_none_on_invalid_json(self):
         mock_mod = MagicMock()
-
-        import sys
         import io
-
-        old_stdout = sys.stdout
-        sys.stdout = io.StringIO()
-        try:
-            mock_mod.main(["--output", "json"])
-        except SystemExit:
-            pass
-        sys.stdout = old_stdout
-
+        buf = io.StringIO()
+        with patch("argocd_insight.report_composer.sys.stdout", buf):
+            try:
+                _capture_json(mock_mod, [])
+            except SystemExit:
+                pass
         result = _capture_json(mock_mod, [])
         assert result is None
 
