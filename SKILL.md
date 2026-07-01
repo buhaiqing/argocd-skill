@@ -17,8 +17,8 @@ description: |
   (13) 批量自动修复：基于诊断结果自动修复问题 App（sync OutOfSync / rollback Degraded），支持 dry-run 预览，调用内置工具 `python -m argocd_insight autofix`。
   (14) 变更影响分析：操作前预览 sync/rollback 会影响哪些资源、依赖关系、风险评估，调用内置工具 `python -m argocd_insight impact`。
    (15) 批量操作：对指定 App 列表或筛选条件（project/label/status）批量并发执行 sync/rollback/refresh，支持 dry-run 预览和并发度控制，调用内置工具 `python -m argocd_insight batch`。
-  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析, 自动修复, 批量修复, autofix, 变更影响, 影响分析, impact, 操作前预览, 批量操作, 批量同步, 并发执行, batch.
-  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight.
+   (16) Application 配置模板生成：基于 4-tier 模型从零生成 ArgoCD Application YAML 和等价 CLI 命令，支持 tier 自动设置默认参数（sync-policy / CreateNamespace / labels），调用内置工具 `python -m argocd_insight scaffold`。
+  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析, 自动修复, 批量修复, autofix, 变更影响, 影响分析, impact, 操作前预览, 批量操作, 批量同步, 并发执行, batch, scaffold, 配置模板, 生成模板, Scaffold.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
 
@@ -876,6 +876,77 @@ python -m argocd_insight batch refresh --all --dry-run
 python -m argocd_insight batch sync --project prod --concurrency 10 --output json
 ```
 然后向用户展示批量操作汇总结果（成功数 / 失败数 / 详情列表）。
+
+### 能力九：Application 配置模板生成（Scaffold）
+
+> **注意：** 本能力是**从零生成** YAML+CLI（正向），区别于子能力 3.1 的**从已有 YAML 反向生成** CLI。
+> 适合新 App 创建、快速原型、以及 CI/CD Pipeline 中的模板化创建。
+
+从零快速生成 ArgoCD Application YAML 和等价 CLI 命令，基于 4-tier 模型自动填充最佳实践默认值。
+
+**调用方式：**
+```bash
+# 业务应用（手动 sync，自动 CreateNamespace=true）
+python -m argocd_insight scaffold my-app \
+  --tier business --namespace production --project default \
+  --repo https://github.com/org/repo.git --path apps/my-app
+
+# Root 聚合入口（auto sync + auto-prune + self-heal）
+python -m argocd_insight scaffold my-root \
+  --tier root --namespace argo-root \
+  --repo https://github.com/org/repo.git --path apps/root
+
+# 运维组件（CreateNamespace=false）
+python -m argocd_insight scaffold prometheus \
+  --tier ops --namespace ops \
+  --repo https://github.com/org/repo.git --path monitoring/prometheus
+
+# Helm 源（--source-type helm + --helm-chart + --helm-values）
+python -m argocd_insight scaffold nginx \
+  --tier business --namespace web --repo https://charts.nginx.org \
+  --source-type helm --helm-chart nginx-ingress \
+  --helm-values values/prod.yaml
+
+# 列出可用层级
+python -m argocd_insight scaffold --list-tiers
+
+# JSON 输出
+python -m argocd_insight scaffold my-app --tier business \
+  --repo https://github.com/org/repo.git --path apps/my-app \
+  --output json
+```
+
+**4-tier 模型：**
+| Tier | 说明 | 默认 Namespace | Sync Policy | CreateNamespace | Labels |
+|------|------|---------------|-------------|-----------------|--------|
+| root | 聚合入口 Root | argo-root | automated | true | - |
+| business | 业务应用 | 需指定 | manual | true | project, profile, stack, app |
+| ops | 运维组件 | ops | manual | false | - |
+| infra_root | 基础设施 Root | argo-root | manual | false | - |
+
+**触发短语：**
+- "帮我生成一个业务 ArgoCD 应用模板，名字叫 my-app"
+- "用 scaffold 创建一个 ArgoCD 应用，从 main 到 prod"
+- "创建一个 Root 聚合入口的 Application YAML"
+- "生成一个运维组件模板，比如 Prometheus"
+- "scaffold 一个 Helm 源的应用"
+- "看下 4-tier 模型有哪些层级"
+- "scaffold 一个 my-app，输出 JSON"
+- "帮我生成个 ArgoCD 应用，用 scaffold --tier business"
+- "我要快速创建个新 App，走 scaffold"
+- "scaffold 支持哪些层级？--list-tiers 看看"
+- "生成一个带 labels 业务应用模板"
+- "创建一个 infra_root 基础设施模板，namespace 设 argo-root"
+
+**任一触发 → Agent 应直接调用：**
+```bash
+# 确定 tier + 必填参数后调用
+python -m argocd_insight scaffold <name> --tier <tier> --repo <url> [--path <path>] [--output json]
+```
+然后向用户展示生成的 YAML + CLI 命令。如果有警告（tier 参数不匹配等），一并提示。
+
+**工具位置：** `scripts/argocd_insight/scaffold.py`
+**依赖：** 仅 Python 标准库（无第三方依赖）
 
 ## 常见错误
 

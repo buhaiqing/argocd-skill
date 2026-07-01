@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
-from . import trend, config_compare, predict, autofix, impact, batch
+from . import trend, config_compare, predict, autofix, impact, batch, scaffold
 from .snapshot_store import SnapshotStore
 
 
@@ -174,6 +174,16 @@ def _handle_batch(args: argparse.Namespace) -> int:
     return batch.main(argv)
 
 
+def _handle_scaffold(args: argparse.Namespace) -> int:
+    """Forward remaining CLI args to scaffold's own argparse."""
+    import sys
+    try:
+        idx = sys.argv.index("scaffold")
+        return scaffold.main(sys.argv[idx + 1:])
+    except ValueError:
+        return scaffold.main([])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="argocd-insight",
@@ -304,6 +314,9 @@ def main() -> int:
     p_batch.add_argument("--timeout", type=int, default=120, help="单个操作超时秒数 (默认 120)")
     p_batch.add_argument("--output", choices=["markdown", "json"], default="markdown")
     p_batch.set_defaults(func=_handle_batch)
+
+    p_scaffold = sub.add_parser("scaffold", help="生成 ArgoCD Application 配置模板（4-tier）")
+    p_scaffold.set_defaults(func=_handle_scaffold)
 
     args = parser.parse_args()
     return args.func(args)

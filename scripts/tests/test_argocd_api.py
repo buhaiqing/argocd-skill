@@ -25,12 +25,10 @@ from argocd_api.client import (
 def test_load_dotenv_sets_vars(tmp_path):
     env = tmp_path / ".env"
     env.write_text("ARGOCD_SERVER=https://argocd.example.com\nARGOCD_USERNAME=ops\n")
-    _load_dotenv(env)
-    assert os.environ["ARGOCD_SERVER"] == "https://argocd.example.com"
-    assert os.environ["ARGOCD_USERNAME"] == "ops"
-    # cleanup
-    del os.environ["ARGOCD_SERVER"]
-    del os.environ["ARGOCD_USERNAME"]
+    with patch.dict(os.environ, {}, clear=True):
+        _load_dotenv(env)
+        assert os.environ["ARGOCD_SERVER"] == "https://argocd.example.com"
+        assert os.environ["ARGOCD_USERNAME"] == "ops"
 
 
 def test_load_dotenv_skips_comments_and_blanks(tmp_path):

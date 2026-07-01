@@ -26,7 +26,7 @@ import json
 import sys
 from datetime import datetime, timezone
 
-from . import compliance, cost, diagnose, health
+from . import compliance, cost, diagnose, health, scaffold
 from .report_push import push_report, _detect_channel
 
 
@@ -50,6 +50,10 @@ MODULES = {
     "health": {
         "module": health,
         "help": "运行稳定性评估",
+    },
+    "scaffold": {
+        "module": scaffold,
+        "help": "Application 配置模板生成",
     },
 }
 

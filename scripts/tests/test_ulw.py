@@ -22,11 +22,10 @@ from ulw.commands import delete_pod, find_pod, PodLocation
 def test_load_dotenv_sets_vars(tmp_path):
     env = tmp_path / ".env"
     env.write_text("ARGOCD_SERVER=https://argocd.example.com\nARGOCD_USERNAME=ops\n")
-    ArgoCDClient._load_dotenv(env)
-    assert os.environ["ARGOCD_SERVER"] == "https://argocd.example.com"
-    assert os.environ["ARGOCD_USERNAME"] == "ops"
-    del os.environ["ARGOCD_SERVER"]
-    del os.environ["ARGOCD_USERNAME"]
+    with patch.dict(os.environ, {}, clear=True):
+        ArgoCDClient._load_dotenv(env)
+        assert os.environ["ARGOCD_SERVER"] == "https://argocd.example.com"
+        assert os.environ["ARGOCD_USERNAME"] == "ops"
 
 
 def test_load_dotenv_skips_comments_and_blanks(tmp_path):
@@ -173,12 +172,10 @@ def test_from_env_with_dotenv(tmp_path):
         "ARGOCD_SERVER=https://dotenv.example.com\n"
         "ARGOCD_AUTH_TOKEN=dotenv-tok\n"
     )
-    client = ArgoCDClient.from_env(dotenv_path=env_file)
-    assert client.server == "https://dotenv.example.com"
-    assert client.token == "dotenv-tok"
-    # cleanup
-    del os.environ["ARGOCD_SERVER"]
-    del os.environ["ARGOCD_AUTH_TOKEN"]
+    with patch.dict(os.environ, {}, clear=True):
+        client = ArgoCDClient.from_env(dotenv_path=env_file)
+        assert client.server == "https://dotenv.example.com"
+        assert client.token == "dotenv-tok"
 
 
 def test_from_env_login_flow():
