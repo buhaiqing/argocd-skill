@@ -47,6 +47,7 @@
 |------|---------|------|
 | P3-1 批量修复 | `python -m argocd_insight autofix` | ✅ 11/11 测试通过 |
 | P3-2 变更影响分析 | `python -m argocd_insight impact` | ✅ 5/5 测试通过 |
+| P3-3 批量操作 | `python -m argocd_insight batch` | ✅ 新增 |
 
 ---
 
@@ -62,6 +63,7 @@
 | 2026-07-01 | P2-4 | Git 源健康检查：repo-health，14 repos 实测 | 143/143 ✅ |
 | 2026-07-01 | P2-1 | 配置合规检查：compliance，566 App / 1s | 143/143 ✅ |
 | 2026-07-02 | v0.4.0 | P3-优化层 P0：autofix（批量修复）+ impact（变更影响分析） | 16/16 ✅ |
+| 2026-07-02 | v0.4.1 | P3-3 批量操作：batch sync/rollback/refresh 并发执行 | 新增 |
 
 ---
 

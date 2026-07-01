@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
-from . import trend, config_compare, predict, autofix, impact
+from . import trend, config_compare, predict, autofix, impact, batch
 from .snapshot_store import SnapshotStore
 
 
@@ -155,6 +155,25 @@ def _handle_impact(args: argparse.Namespace) -> int:
     return impact.main(argv)
 
 
+def _handle_batch(args: argparse.Namespace) -> int:
+    argv: list[str] = [args.operation, "--output", args.output]
+    if args.project:
+        argv += ["--project", args.project]
+    if args.label:
+        argv += ["--label", args.label]
+    if args.status:
+        argv += ["--status", args.status]
+    if args.apps:
+        argv += ["--apps"] + args.apps
+    if args.all:
+        argv.append("--all")
+    if args.dry_run:
+        argv.append("--dry-run")
+    argv += ["--concurrency", str(args.concurrency)]
+    argv += ["--timeout", str(args.timeout)]
+    return batch.main(argv)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="argocd-insight",
@@ -272,6 +291,19 @@ def main() -> int:
     p_impact.add_argument("history_id", nargs="?", type=int, help="回滚历史 ID")
     p_impact.add_argument("--output", choices=["markdown", "json"], default="markdown")
     p_impact.set_defaults(func=_handle_impact)
+
+    p_batch = sub.add_parser("batch", help="批量操作 ArgoCD 应用")
+    p_batch.add_argument("operation", choices=["sync", "rollback", "refresh"], help="操作类型")
+    p_batch.add_argument("--project", help="按项目过滤")
+    p_batch.add_argument("--label", help="按标签过滤 (key=value)")
+    p_batch.add_argument("--status", help="按状态过滤 (如 Degraded, OutOfSync)")
+    p_batch.add_argument("--apps", nargs="*", help="指定应用列表")
+    p_batch.add_argument("--all", action="store_true", help="操作所有应用")
+    p_batch.add_argument("--dry-run", action="store_true", help="预览操作，不实际执行")
+    p_batch.add_argument("--concurrency", type=int, default=5, help="并发数 (默认 5)")
+    p_batch.add_argument("--timeout", type=int, default=120, help="单个操作超时秒数 (默认 120)")
+    p_batch.add_argument("--output", choices=["markdown", "json"], default="markdown")
+    p_batch.set_defaults(func=_handle_batch)
 
     args = parser.parse_args()
     return args.func(args)
