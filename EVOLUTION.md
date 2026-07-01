@@ -88,13 +88,16 @@
 |------|--------|--------|
 | 执行层 | **App**：create/delete/sync/rollback/set/patch/delete-resource/refresh/unset/edit/terminate-op/logs/events/diff/history/wait/add-source/remove-source；**Project**：create/delete/edit/get/list/add-source/remove-source/add-dest/remove-dest/set；**ApplicationSet**：get/list/create/delete/generate；**Account**：get-user-info/generate-token/delete-token/list/update-password/can-i；**Repo/Cluster**：add/list/get/rm；**YAML→CLI/批量工具/健康报告** | — |
 | 诊断层 | **diagnose**：8 类问题诊断；**drift**：跨集群版本漂移检测；**health**：8 维度稳定性打分；**repo-health**：Git 源健康；**oos_analyzer**：OutOfSync 根因归因；**stats**：部署频率统计；**compliance**：配置合规检查；**cost**：资源成本估算；**multi-cluster**：多集群对比报告；**report-push**：报告推送 | — |
-| 优化层 | — | — |
+| 优化层 | **autofix**：批量修复（sync/rollback）；**impact**：变更影响分析 | **batch**：批量操作；**scaffold**：配置模板；**patrol**：定时巡检；**audit**：部署审计 |
 
 ### 缺口池（下一步优先级）
 
 | 缺口 | 来源 | 优先级 | 目标版本 |
 |------|------|--------|----------|
-| — | — | — | — |
+| P3-3 批量操作（batch） | 多 App 运维效率 | P1 | v0.4.1 |
+| P3-4 配置模板（scaffold） | 新 App 快速创建 | P1 | v0.4.2 |
+| P3-5 定时巡检（patrol） | 主动发现问题 | P2 | v0.5.0 |
+| P3-6 部署审计（audit） | 合规与追溯 | P2 | v0.5.0 |
 
 ### 范围定义
 
@@ -133,4 +136,5 @@ regression 回滚：`git revert <bad-commit> && git tag -d vX.Y.Z && git push or
 | 2026-07-01 | v0.3.1 | P1-2 全量压测：argocd_deploy_stats.stats，566 App / 150s，1735 部署 |
 | 2026-07-01 | P2-4 | Git 源健康检查：repo_health.py，14 repos 实测，143/143 测试通过 |
 | 2026-07-01 | P2-1 | 配置合规检查：compliance.py，566 App 实测（547 有风险），143/143 测试通过 |
-| 2026-07-01 | P2-2~P2-5 | 运营优化层全量发布：cost（资源成本估算）/ multi-cluster（多集群对比报告）/ report-push（飞书/钉钉/Slack 报告推送）。新增模块：cost.py（159 测试）/ multi_cluster.py（172 测试）/ report_push.py（23 测试）。SKILL.md 提示词示例扩充。
+| 2026-07-01 | P2-2~P2-5 | 运营优化层全量发布：cost（资源成本估算）/ multi-cluster（多集群对比报告）/ report-push（飞书/钉钉/Slack 报告推送）。新增模块：cost.py（159 测试）/ multi_cluster.py（172 测试）/ report_push.py（23 测试）。SKILL.md 提示词示例扩充。|
+| 2026-07-02 | v0.4.0 | P3-优化层 P0：autofix（批量修复）+ impact（变更影响分析）。新增模块：autofix.py（11 测试）/ impact.py（5 测试）。SKILL.md 能力(13)(14)。TODO.md P3-1/P3-2 标记完成。|

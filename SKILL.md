@@ -14,7 +14,9 @@ description: |
   (10) Git 源健康检查：检查 ArgoCD 所有仓库的连接状态（ArgoCD server 侧）、分支可达性，输出健康报告，调用内置工具 `python -m argocd_insight repo-health` 或 `python -m argocd_deploy_stats.stats`（部署频率统计）。
   (11) 配置合规检查：检查 App syncPolicy 风险（automated 无 retry / 无 self-heal / 无 prune）、namespace 风险，输出风险数 + 严重级别 + 具体修复命令，调用内置工具 `python -m argocd_insight compliance`。
   (12) 资源成本估算：查询 ArgoCD App 的部署资源（CPU/Memory requests），估算运行成本，输出成本概览 + Top 10 高成本 App，调用内置工具 `python -m argocd_insight cost`。
-  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析.
+  (13) 批量自动修复：基于诊断结果自动修复问题 App（sync OutOfSync / rollback Degraded），支持 dry-run 预览，调用内置工具 `python -m argocd_insight autofix`。
+  (14) 变更影响分析：操作前预览 sync/rollback 会影响哪些资源、依赖关系、风险评估，调用内置工具 `python -m argocd_insight impact`。
+  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析, 自动修复, 批量修复, autofix, 变更影响, 影响分析, impact, 操作前预览.
   Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---

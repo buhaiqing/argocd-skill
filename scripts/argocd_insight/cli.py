@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
-from . import trend, config_compare, predict
+from . import trend, config_compare, predict, autofix, impact
 from .snapshot_store import SnapshotStore
 
 
@@ -139,6 +139,22 @@ def _handle_predict(args: argparse.Namespace) -> int:
     return predict.main(argv)
 
 
+def _handle_autofix(args: argparse.Namespace) -> int:
+    argv: list[str] = [args.diagnosis, "--output", args.output]
+    if args.dry_run:
+        argv.append("--dry-run")
+    if args.severity:
+        argv += ["--severity", args.severity]
+    return autofix.main(argv)
+
+
+def _handle_impact(args: argparse.Namespace) -> int:
+    argv: list[str] = [args.app, args.operation, "--output", args.output]
+    if args.history_id is not None:
+        argv.insert(2, str(args.history_id))
+    return impact.main(argv)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="argocd-insight",
@@ -241,6 +257,21 @@ def main() -> int:
     p_pred.add_argument("--budget", type=float, default=None, help="每应用预算上限 (USD)")
     p_pred.add_argument("--type", choices=["all", "lag", "cost"], default="all", help="预测类型")
     p_pred.set_defaults(func=_handle_predict)
+
+    p_autofix = sub.add_parser("autofix", help="基于诊断结果批量修复")
+    p_autofix.add_argument("diagnosis", help="诊断结果 JSON 文件路径")
+    p_autofix.add_argument("--dry-run", action="store_true", help="预览修复，不实际执行")
+    p_autofix.add_argument("--severity", choices=["critical", "high", "medium", "low"],
+                           help="最低修复级别")
+    p_autofix.add_argument("--output", choices=["markdown", "json"], default="markdown")
+    p_autofix.set_defaults(func=_handle_autofix)
+
+    p_impact = sub.add_parser("impact", help="变更影响分析")
+    p_impact.add_argument("app", help="应用名称")
+    p_impact.add_argument("operation", choices=["sync", "rollback"], help="操作类型")
+    p_impact.add_argument("history_id", nargs="?", type=int, help="回滚历史 ID")
+    p_impact.add_argument("--output", choices=["markdown", "json"], default="markdown")
+    p_impact.set_defaults(func=_handle_impact)
 
     args = parser.parse_args()
     return args.func(args)
