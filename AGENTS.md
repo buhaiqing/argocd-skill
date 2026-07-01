@@ -438,7 +438,7 @@ finds no new issues.
 提交并合并到 main
 ```
 
-### 测试执行委托规则 (Test delegation rule)
+### [IMPORTANT] 测试执行委托规则 (Test delegation rule)
 
 **所有单元测试的执行必须委托给子 agent**，主 agent 不直接运行 pytest。规则如下：
 
