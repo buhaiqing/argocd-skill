@@ -416,6 +416,172 @@ After **any** change to `SKILL.md` or its `references/` / `scripts/`:
 Report `[OK] argocd-skill v0.1.0 — N rounds clean` when round N
 finds no new issues.
 
+## 自动化测试要求 (Automated testing requirements)
+
+每个功能点开发完成后，**必须**执行一轮完整的自动化测试，并修复发现的问题，确保功能回归质量稳定、功能迭代平稳推进。
+
+### 测试执行流程 (Test execution flow)
+
+```
+功能代码实现完成
+  ↓
+运行全量测试套件（非仅新增模块）
+  ↓
+测试通过率 = 100%？ ─── 否 → 定位失败原因 → 修复 → 重新运行
+  ↓ 是
+自审代码质量（类型安全 / 死代码 / 注释清理）
+  ↓
+运行性能基准（97-YAML < 1s；500-app < 5s）
+  ↓
+提交并合并到 main
+```
+
+### 测试命令 (Test commands)
+
+```bash
+# 推荐：从 scripts/ 目录运行（pytest 自动发现 tests/）
+cd scripts/
+python3 -m pytest tests/ -v
+
+# 并行执行（需安装 pytest-xdist）
+python3 -m pytest tests/ -v -n auto
+
+# 仅运行新增/修改模块的测试
+python3 -m pytest tests/test_<module>.py -v
+
+# 带覆盖率（可选）
+python3 -m pytest tests/ -v --cov=argocd_insight --cov-report=term-missing
+```
+
+### 测试质量标准 (Test quality standards)
+
+| 维度 | 要求 |
+|---|---|
+| **外部依赖** | 所有外部服务（ArgoCD API / K8s API / HTTP）必须通过 mock 隔离；禁止依赖 live 连接 |
+| **临时目录** | 使用 pytest `tmp_path` fixture，禁止 `tempfile.mkdtemp()`（自动清理 + 线程安全） |
+| **Mock 粒度** | mock 到具体模块路径（如 `unittest.mock.patch('argocd_insight.module.func')`），禁止过度 mock |
+| **覆盖范围** | 每个公开函数至少 1 个正向 + 1 个异常/边界测试；CLI 入口必须测试 |
+| **断言具体** | 禁止 `assert result`（无信息量）；使用 `assert result["key"] == expected_value` |
+| **测试隔离** | 测试间无状态共享；fixture 作用域默认 `function`（除非明确需要 `session`） |
+
+### Hypothesis 属性测试 (Hypothesis property-based testing)
+
+对于具有确定性输入→输出映射的纯函数模块，**推荐**使用 [Hypothesis](https://hypothesis.readthedocs.io/) 进行属性测试：
+
+| 适用模块 | 属性测试示例 |
+|---|---|
+| `parser.py` (4-tier 分类) | 输入任意 namespace + name → 输出固定 tier ∈ {root, root_entry, business, ops} |
+| `mapper.py` (字段→flag 映射) | 输入任意 Kustomize 字段路径 → 输出对应的 CLI flag |
+| `trend.py` (统计计算) | 输入任意 delta → pct_change == (last - first) / first × 100 |
+| `report_composer.py` (截断) | 任意输入文本 → len(output) ≤ max_lines |
+
+不适用场景：需要外部 IO、非纯函数、简单组合逻辑（如 `_summarize_module`）。
+
+Hypothesis 用法示例：
+
+```python
+from hypothesis import given, strategies as st
+
+@given(st.floats(min_value=0, max_value=1_000_000), st.floats(min_value=0, max_value=1_000_000))
+def test_pct_change_property(first, last):
+    result = compute_delta([make_snapshot(first), make_snapshot(last)], "metric")
+    if first > 0:
+        assert result["pct_change"] == pytest.approx((last - first) / first * 100)
+```
+
+### 性能回归保护 (Performance regression guard)
+
+测试套件的执行时间本身也是质量指标：
+
+| 基线 | 阈值 |
+|---|---|
+| 97-YAML 全样本处理 | < 1s |
+| 500-app 批量处理 | < 5s |
+| 完整测试套件（pytest -v） | < 10s |
+
+若测试时间显著增加，需检查是否有：
+- 未 mock 的外部 IO
+- 过大的测试数据 fixture
+- 重复的 setup/teardown 开销
+
+## 性能极致优化要求 (Performance optimization to the extreme)
+
+在保障功能正确的前提下，**尽可能做到高性能，优化到极致**。每个功能点开发完成并通过测试后，**必须**重新复盘性能表现，发现优化空间则立即调优。
+
+### 性能复盘流程 (Performance review flow)
+
+```
+功能点开发完成 + 测试通过
+  ↓
+性能复盘（逐项检查）
+  ↓
+有优化空间？ ─── 否 → 记录"无优化点"，进入下一轮
+  ↓ 是
+量化优化收益（时间/空间复杂度对比）
+  ↓
+实施优化 + 回归测试验证
+  ↓
+记录优化结果（Before / After / 收益百分比）
+  ↓
+提交合并
+```
+
+### 性能复盘检查清单 (Performance review checklist)
+
+| 维度 | 检查项 | 优化方向 |
+|---|---|---|
+| **算法复杂度** | 是否存在 O(n²) 或更高复杂度的嵌套循环 | 改用 O(n) 或 O(n log n) 算法；考虑缓存/索引 |
+| **数据结构** | 列表查找是否频繁（`in list` → O(n)） | 改用 `set` / `dict` 做 O(1) 查找 |
+| **IO 开销** | 是否存在不必要的重复文件读写 | 批量读取；缓存中间结果；避免 N+1 模式 |
+| **内存占用** | 是否一次性加载全部数据到内存 | 改用流式处理 / 生成器 / 分块读取 |
+| **正则编译** | 是否在循环内重复编译正则 | 提升为模块级常量 `re.compile()` |
+| **字符串拼接** | 是否在循环内用 `+` 拼接长字符串 | 改用 `"".join()` 或 `io.StringIO` |
+| **import 延迟** | 是否在函数内 `import` 仅在该函数使用的模块 | 提升到文件顶部（除非是循环依赖或条件导入） |
+| **序列化开销** | 是否频繁 `json.dumps/loads` 相同数据 | 缓存序列化结果；仅在输出时序列化一次 |
+
+### 性能基准指标 (Performance benchmarks)
+
+| 操作 | 当前基线 | 目标上限 |
+|---|---|---|
+| 97-YAML 全样本处理 | < 1s | < 500ms |
+| 500-app 批量处理 | < 5s | < 2s |
+| 单模块 CLI 子命令响应 | < 100ms | < 50ms |
+| 快照保存/加载 | < 50ms | < 20ms |
+| 趋势分析（10 快照） | < 100ms | < 50ms |
+| 测试套件执行 | < 10s | < 5s |
+
+### 优化记录格式 (Optimization log format)
+
+每次性能复盘和优化必须在 commit message 中记录：
+
+```
+perf: 优化 <模块名> <操作> — <Before> → <After> (<收益百分比>)
+
+- 问题：描述性能瓶颈
+- 方案：采用的优化策略
+- 效果：量化收益（时间/内存/IO）
+- 回归：测试通过率 100%
+```
+
+示例：
+```
+perf: 优化 trend.compute_delta — 120ms → 35ms (-71%)
+
+- 问题：每次调用都重新遍历 snapshots 列表查找目标指标
+- 方案：预构建指标→值索引 dict，O(1) 直接访问
+- 效果：10 个快照 × 5 指标场景从 120ms 降至 35ms
+- 回归：测试通过率 100%（308/308）
+```
+
+### 优化优先级 (Optimization priority)
+
+| 优先级 | 场景 | 说明 |
+|---|---|---|
+| **P0 必须** | 存在 O(n²) 以上复杂度且 n > 100 | 直接阻塞交付 |
+| **P1 强烈建议** | 可通过数据结构变更获得 > 50% 收益 | 在本轮功能点内完成 |
+| **P2 建议** | 可通过缓存/预计算获得 > 30% 收益 | 可记录 TODO，下一轮完成 |
+| **P3 锦上添花** | 微优化（< 20% 收益） | 仅在复盘时顺手完成，不单独提交 |
+
 ## Cross-skill delegation (provisional)
 
 | Task | Delegate to |
