@@ -6,6 +6,7 @@ Tests the full chain: 采集 → 存储 → 查询 → 推送
 from __future__ import annotations
 
 import json
+import unittest.mock
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -206,6 +207,50 @@ class TestReportComposerIntegration:
         short_data = [{"key": "value"}]
         result = _truncate_json_block(short_data, max_items=100)
         assert isinstance(result, str)
+
+
+class TestReportPushPipeline:
+    """报告合成 + 推送链路（mock webhook）。"""
+
+    @unittest.mock.patch("argocd_insight.report_push.send_webhook")
+    def test_compose_and_push(self, mock_send):
+        mock_send.return_value = (200, "")
+
+        from argocd_insight.report_composer import compose_report
+
+        report_text, results = compose_report(
+            includes=["health"],
+            push=True,
+            webhook_url="https://example.com/hook",
+            channel="feishu",
+        )
+
+        assert "ArgoCD 综合报告" in report_text
+        mock_send.assert_called_once()
+        call_args = mock_send.call_args
+        assert call_args[0][0] == "https://example.com/hook"
+
+    @unittest.mock.patch("argocd_insight.report_push.send_webhook")
+    def test_push_failure_returns_error(self, mock_send):
+        mock_send.return_value = (500, "Internal Server Error")
+
+        from argocd_insight.report_composer import compose_report
+
+        # compose_report prints error to stderr but doesn't raise
+        report_text, _ = compose_report(
+            includes=["health"],
+            push=True,
+            webhook_url="https://example.com/hook",
+        )
+        assert report_text  # report still generated even if push fails
+        mock_send.assert_called_once()
+
+    def test_push_without_webhook_skipped(self):
+        from argocd_insight.report_push import push_report
+
+        ok, err = push_report("test", webhook_url="")
+        assert ok is False
+        assert "webhook" in err.lower() or "缺少" in err
 
 
 class TestEndToEndChain:
