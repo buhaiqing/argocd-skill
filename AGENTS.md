@@ -425,16 +425,39 @@ finds no new issues.
 ```
 功能代码实现完成
   ↓
-运行全量测试套件（非仅新增模块）
+主 agent 委托子 agent 运行全量测试套件
   ↓
-测试通过率 = 100%？ ─── 否 → 定位失败原因 → 修复 → 重新运行
+子 agent 返回结果 → 主 agent 判断
+  ↓
+测试通过率 = 100%？ ─── 否 → 主 agent 定位 + 修复 → 重新委托
   ↓ 是
 自审代码质量（类型安全 / 死代码 / 注释清理）
   ↓
-运行性能基准（97-YAML < 1s；500-app < 5s）
+主 agent 委托子 agent 运行性能基准
   ↓
 提交并合并到 main
 ```
+
+### 测试执行委托规则 (Test delegation rule)
+
+**所有单元测试的执行必须委托给子 agent**，主 agent 不直接运行 pytest。规则如下：
+
+1. **主 agent** 负责编写/修改测试代码，但**不执行**测试命令
+2. **子 agent**（`task(category="quick")` 或 `task(subagent_type="deep")`）负责执行测试并返回结果
+3. 主 agent 根据子 agent 返回的结果决定下一步（通过 → 提交；失败 → 修复后重新委托）
+4. 测试执行的超时、重试、环境准备均由子 agent 管理
+
+委托示例：
+```python
+task(
+    category="quick",
+    description="run argocd-insight tests",
+    prompt="cd /Users/bohaiqing/opensource/git/argocd-skill/scripts && python3 -m pytest tests/ -v --tb=short 2>&1 | tail -50",
+    run_in_background=False,
+)
+```
+
+**例外**：单文件 < 5 行的 typo 修复可跳过委托，直接用 `lsp_diagnostics` 验证。
 
 ### 测试命令 (Test commands)
 
