@@ -46,11 +46,106 @@ argocd app sync APPNAME --prune
 argocd app get APPNAME                                  # 详情
 argocd app list [-l LABEL_SELECTOR]                     # 列表
 argocd app history APPNAME                              # 历史
-argocd app diff APPNAME                                 # 差异对比
+argocd app diff APPNAME                                 # 差异对比（干跑）
 argocd app manifests APPNAME [--revision REV]           # Manifest
+argocd app resources APPNAME                            # 资源树（kind/name/namespace/健康态）
+argocd app logs APPNAME [--follow] [--tail N]          # Pod 日志
+argocd app events APPNAME                              # 应用事件
 ```
 
-### 修改 syncPolicy
+#### P0-2：Pod / Container 日志
+
+> 触发词：「查看日志」「看 Pod 日志」「App 里的容器日志」「events」
+
+```bash
+# 查看应用所有关联 Pod 的日志
+argocd app logs APPNAME
+
+# 实时跟踪日志（类似 tail -f）
+argocd app logs APPNAME --follow
+
+# 只看最近 N 行
+argocd app logs APPNAME --tail 100
+
+# 指定特定资源
+argocd app logs APPNAME \
+  --kind Pod \
+  --namespace my-ns \
+  --name my-pod-xxx \
+  --container my-container
+
+# 查看 App 相关的事件
+argocd app events APPNAME
+
+# 直接查 Kubernetes 事件（ArgoCD 无法覆盖时）
+kubectl get events -n <namespace> \
+  --field-selector involvedObject.name=<app-name>,involvedObject.namespace=<namespace> \
+  --sort-by=.lastTimestamp
+```
+
+#### P0-3：App diff（干跑对比）
+
+> 触发词：「App diff」「看差异」「本地和集群有什么不同」「哪些资源有漂移」
+
+```bash
+# 查看 App 的完整差异（Git vs 集群）
+argocd app diff APPNAME
+
+# 只看某个 namespace 的 diff
+argocd app diff APPNAME --namespace my-ns
+
+# 导出 diff 结果（用于自动化检查）
+# exit code: 0=无差异, 1=有差异, 2=错误
+argocd app diff APPNAME; echo "exit code: $?"
+
+# 提取 OutOfSync 资源列表
+argocd app get APPNAME -o json | \
+  python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for r in d.get('status',{}).get('resources',[]):
+    if r.get('status') not in ('Synced',''):
+        print(r['kind']+'/'+r['name']+' ['+r['status']+']')
+"
+```
+
+#### P0-5：全量 App 健康报告
+
+> 触发词：「所有 App 健康状况」「App 报告」「哪些 App 有问题」
+
+```bash
+# 生成全量健康报告（按 health/sync/project 分组）
+argocd app list --output json | \
+  python3 -c "
+import json,sys
+apps=json.load(sys.stdin)
+ok=[a for a in apps if a.get('status',{}).get('health',{}).get('status')=='Healthy']
+err=[a for a in apps if a.get('status',{}).get('health',{}).get('status') not in('Healthy','Missing','')]
+unk=[a for a in apps if not a.get('status',{}).get('health',{}).get('status')]
+oos=[a for a in apps if a.get('status',{}).get('sync',{}).get('status')=='OutOfSync']
+print('总 App 数：'+str(len(apps)))
+print('Healthy: '+str(len(ok))+' | 异常: '+str(len(err))+' | 未知: '+str(len(unk)))
+print('Synced: '+str(len(apps)-len(oos))+' | OutOfSync: '+str(len(oos)))
+for a in err: print('  [异常] '+a['metadata']['name']+': '+a['status']['health']['status'])
+for a in oos: print('  [OutOfSync] '+a['metadata']['name'])
+"
+
+# 按 project 分组统计
+argocd app list --output json | \
+  python3 -c "
+import json,sys
+from collections import defaultdict
+apps=json.load(sys.stdin)
+by_proj=defaultdict(list)
+for a in apps:
+    p=a.get('spec',{}).get('project','unknown')
+    by_proj[p].append(a)
+for p,as_ in sorted(by_proj.items()):
+    print(p+': '+str(len(as_))+' App')
+"
+```
+
+### 修改 syncPolicy（已有）
 
 ```bash
 argocd app set APPNAME \
@@ -59,16 +154,117 @@ argocd app set APPNAME \
   --self-heal
 ```
 
+#### P0-4：修改 App 参数（set / patch）
+
+> 触发词：「修改 App 参数」「改 revision」「改 namespace」「改 sync-policy」「把 App 改成手动同步」
+
+**常用参数（`argocd app set`）：**
+```bash
+# 修改 Git revision（切换分支/tag/SHA）
+argocd app set APPNAME --revision <branch-or-sha>
+
+# 修改目标 namespace
+argocd app set APPNAME --dest-namespace <namespace>
+
+# 修改 sync-policy（关闭自动化 → 手动模式）
+argocd app set APPNAME --sync-policy none
+
+# 开启自动化同步（Root 入口或明确需要自愈的业务 App）
+argocd app set APPNAME --sync-policy automated --auto-prune --self-heal
+
+# 调整 Kustomize 参数
+argocd app set APPNAME --kustomize-nameprefix <prefix> --kustomize-image <img>
+
+# 修改 Helm 参数
+argocd app set APPNAME --param key=value
+
+# 查看当前所有参数
+argocd app get APPNAME -o json | jq '.spec'
+```
+
+**patch 场景（修改 YAML 子字段）：**
+```bash
+# 对 App 内的某个资源打 patch（如改副本数）
+argocd app patch-resource APPNAME \
+  --kind Deployment \
+  --name my-deploy \
+  --namespace my-ns \
+  --patch '{"spec":{"replicas":3}}' \
+  --patch-type application/strategic-merge-patch
+```
+
 ### 回滚
 
 ```bash
 argocd app rollback APPNAME [HISTORY_ID]
 ```
 
-### 删除
+### 补充 App 操作（refresh / unset / edit / terminate-op / 多源）
+
+```bash
+# 强制刷新：强制 ArgoCD 重新从 Git 拉取并对账（解决 cache 不一致）
+argocd app refresh APPNAME
+
+# 取消已设置的参数（如取消 automated syncPolicy / 取消 kustomize namePrefix）
+argocd app unset APPNAME --sync-policy
+argocd app unset APPNAME --kustomize-nameprefix
+
+# 交互式编辑：打开 $EDITOR 编辑 app spec（等价 UI 点「Edit」按钮）
+argocd app edit APPNAME
+
+# 终止正在运行的 sync / rollback 操作
+argocd app terminate-op APPNAME
+
+# 多源管理：增/删 App 的 source
+argocd app add-source APPNAME --repo <url> --path <path> --revision <rev>
+argocd app remove-source APPNAME --repo <url>
+```
+
+### 删除 Application（整应用）
 
 ```bash
 argocd app delete APPNAME [--cascade]
+```
+
+### 删除 Application 内的单个 Resource
+
+> ⚠️ **副作用说明**：删除后 App 进入 OutOfSync 状态，ArgoCD 下次 Reconciliation 会从 Git 源重建该资源。如需立即恢复，执行 `argocd app sync APPNAME --prune`。
+
+```bash
+# 标准删除（安全：留 orphans 让 Git 接管）
+argocd app delete-resource APPNAME \
+  --kind <Kind> \
+  --resource-name <NAME> \
+  --namespace <NS>
+
+# 强制删除（跳过 finalizer 等保护）
+argocd app delete-resource APPNAME \
+  --kind <Kind> \
+  --resource-name <NAME> \
+  --namespace <NS> \
+  --force
+
+# 删除并清理 orphans（等同于 sync --prune 行为）
+argocd app delete-resource APPNAME \
+  --kind <Kind> \
+  --resource-name <NAME> \
+  --namespace <NS> \
+  --orphan
+```
+
+**完整操作示例（删 Service + 确认恢复）：**
+```bash
+# 1. 删除
+argocd app delete-resource my-app \
+  --kind Service \
+  --resource-name my-service \
+  --namespace my-namespace
+
+# 2. 验证 App 状态（应为 OutOfSync）
+argocd app get my-app -o json | jq '{sync: .status.sync.status, health: .status.health.status}'
+
+# 3. 从 Git 重建（可选）
+argocd app sync my-app --prune
 ```
 
 ### 等待同步
@@ -82,12 +278,86 @@ argocd app wait APPNAME [--health] [--suspended] [--timeout N]
 ```bash
 argocd repo add <URL> --username <USER> --password <PASS>
 argocd repo list
+argocd repo get <URL>                       # 查单个仓库详情
+argocd repo rm <URL>                        # ⚠️ 必须确认无应用依赖
 argocd cluster add <KUBE_CONTEXT>
 argocd cluster list
-argocd proj create <NAME>
+argocd cluster get <NAME>                    # 查集群详情
+argocd cluster rm <NAME>                    # ⚠️ 必须确认无应用依赖
 ```
 
-## 操作场景处理规则
+#### Project 管理
+
+> 触发词：「创建项目」「删除项目」「给项目加仓库」「项目里允许哪些 namespace」
+
+```bash
+# 增删查改
+argocd proj create <PROJECT>                              # 创建
+argocd proj list                                          # 列表
+argocd proj get <PROJECT>                                # 详情
+argocd proj delete <PROJECT>                             # ⚠️ 必须二次确认
+argocd proj edit <PROJECT>                               # 交互式编辑（打开 $EDITOR）
+
+# 源管理
+argocd proj add-source <PROJECT> <REPO_URL> [--path <path>] [--revision <rev>]
+argocd proj remove-source <PROJECT> <REPO_URL>
+
+# 目标管理（哪些集群+namespace 该 project 下的 App 可以部署到）
+argocd proj add-destination <PROJECT> <CLUSTER> <NAMESPACE>
+argocd proj remove-destination <PROJECT> <CLUSTER> <NAMESPACE>
+
+# Sync Windows
+argocd proj windows list <PROJECT>
+# （sync window 完整操作用 argocd proj windows --help）
+
+# 参数设置
+argocd proj set <PROJECT> --allow-namespaced-resource <KIND>   # 允许某类 namespaced 资源
+argocd proj set <PROJECT> --deny-namespaced-resource <KIND>    # 拒绝某类 namespaced 资源
+```
+
+#### ApplicationSet 管理
+
+> 触发词：「查看 ApplicationSet」「删除 ApplicationSet」「生成 ApplicationSet 的 app」
+
+```bash
+argocd appset list                                      # 列表
+argocd appset get <APPSETNAME>                         # 详情
+argocd appset create <FILE.yaml>                        # 从 YAML 创建
+argocd appset delete <APPSETNAME>                      # ⚠️ 必须二次确认
+argocd appset generate <APPSETNAME>                     # 干跑：生成会被创建的所有 App
+```
+
+#### Account / Token 管理
+
+> 触发词：「生成 token」「查看用户信息」「删除 token」
+
+```bash
+argocd account list                                      # 列出所有账号
+argocd account get-user-info                             # 当前登录用户信息
+argocd account generate-token --account <NAME>          # 为指定账号生成 token
+argocd account delete-token --token <TOKEN>             # 删除某个 token
+argocd account update-password                           # 交互式改密码
+argocd account can-i sync applications '*'              # 权限检查
+```
+
+## 删除单个 Resource 的完整流程
+
+当用户说「删掉 App 里的某个资源 / 删除 xxx Pod / 删掉某个 Service」时：
+
+1. **识别目标**：用 `argocd app resources APPNAME` 找到资源的 kind / name / namespace
+2. **执行删除**：`argocd app delete-resource APPNAME --kind X --resource-name Y --namespace Z`
+3. **显式告知副作用**：告知用户 App 会变成 OutOfSync，下次 Reconcile（或手动 sync）会重建
+4. **主动建议恢复**：如果用户未明确说「不要重建」，默认给出 `argocd app sync APPNAME --prune` 命令
+
+**危险等级判断**：
+| 资源类型 | 风险 | 确认要求 |
+|---------|------|---------|
+| Pod / Deployment / StatefulSet | 高（影响业务） | 必须用户复述资源标识 |
+| Service / ConfigMap / Ingress | 中（可快速恢复）| 提示确认即可 |
+| Secret | 高（凭证风险）| 必须用户复述 + 明确说明 |
+| CRD / ClusterRole / Namespace | 极高（影响范围大）| 拒绝 + 说明边界 |
+
+
 
 | 场景 | 规则 |
 |------|------|
@@ -189,29 +459,104 @@ argocd app get <name> -o json | jq '.status.sync.status'
 | `argocd cluster rm <ctx>` | 移除集群 context，影响所有依赖该集群的应用 | 「请复述 context + 确认无应用依赖」 |
 | `argocd repo rm <url>` | 移除仓库凭证，依赖该仓库的应用会报 sync 错 | 「请复述 URL + 确认无应用依赖」 |
 | `argocd proj delete <name>` | 删 AppProject，project 下所有应用级联失败 | 「请复述 name + 提示此操作不可逆」 |
+| `argocd appset delete <name>` | 删 ApplicationSet，所有由它生成的 App 也会被清理 | 「请复述 AppSet name」 |
+| `argocd app terminate-op <name>` | 强杀正在进行的 sync/rollback 操作，可能导致中间状态 | 「请复述 app name + 说明为何 terminate」 |
+| `argocd app unset <name> --sync-policy` | 关闭 automated syncPolicy，App 停止自愈/自动同步 | 「确认要关闭该 App 的自动化同步吗？」 |
+| `argocd repo rm <url>` | 移除仓库凭证，依赖该仓库的应用会报 sync 错 | 「请复述 URL + 确认无应用依赖」 |
+| `argocd cluster rm <ctx>` | 移除集群 context，影响所有依赖该集群的应用 | 「请复述 context + 确认无应用依赖」 |
+| `argocd account delete-token <token>` | 吊销某个认证令牌，可能导致依赖它的自动化脚本失效 | 「请复述 token 前 8 位确认」 |
 | `argocd app set --sync-policy automated --self-heal` | 开自愈，ArgoCD 会持续覆盖集群漂移 | 「这是 Root 入口或业务确实需要自愈吗？」 |
 
 ## 开机自检（会话开头）
 
 每个会话处理第一条命令前，Agent 在内部（不在用户输出中）先做凭证自检。未通过则提示用户补全，不直接报错退出。
 
-**自检项：**
+### 步骤 1：加载 `.env`（如果存在）
 
-1. `ARGOCD_AUTH_TOKEN` 是否已 export？未设 → 提示「请先 `export ARGOCD_AUTH_TOKEN=***`（或运行 `argocd login`）」。
-2. `ARGOCD_SERVER` 是否已 export 或有默认值？未设 → 提示「请先 `export ARGOCD_SERVER=argocd.example.com`」。
-3. `argocd` CLI 是否在 PATH？未设 → 提示安装（参考能力一）。
-
-**Agent 内部参考的 bash 片段（不要直接 echo 给用户）：**
+Agent 应优先检查 skill 仓库根目录下的 `.env` 文件并自动 `source`：
 
 ```bash
-: "${ARGOCD_AUTH_TOKEN:?need ARGOCD_AUTH_TOKEN env var}"
-: "${ARGOCD_SERVER:=argocd.hd123.com}"
+ENV_FILE="<skill-root>/.env"   # 例如：argocd-skill/.env
+test -f "$ENV_FILE" && set -a; source "$ENV_FILE"; set +a
 ```
+
+`.env` 中定义的变量优先级低于 shell env 中已 export 的同名变量（shell 的 `set -a` 不会覆盖已设变量）。`.env.example` 是模板，**不会被自动加载**。
+
+### 步骤 2：认证凭证检测（4 层优先级）
+
+| 优先级 | 来源 | 说明 |
+|--------|------|------|
+| **1** | Shell env 的 `ARGOCD_AUTH_TOKEN` | `argocd login --auth-token`，最高优先级 |
+| **2** | `~/.config/argocd/config` | 本地已保存的 token + server 配置（含 `grpc-web-root-path` / `insecure`） |
+| **3** | `.env` 中的 `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` | 走 HTTP API `/api/v1/session` 获取 token（见步骤 5） |
+| **4** | `.env` 中的 `ARGOCD_AUTH_TOKEN` | `.env` 中的 token，最低优先级 |
+
+### 步骤 3：`ARGOCD_SERVER` 与 CLI 可用性
+
+1. `command -v argocd` → 未找到则提示安装（参考「能力一：CLI 安装」）。
+2. `ARGOCD_SERVER` 是否已设 → 未设则提示用户提供。
+
+### 步骤 4：CLI login
+
+```bash
+argocd login "$ARGOCD_SERVER" \
+  --username "$ARGOCD_USERNAME" \
+  --password "$ARGOCD_PASSWORD"
+```
+
+如果成功 → 继续执行后续命令。
+
+### 步骤 5：CLI login 失败 → HTTP API 回退（Python 模块）
+
+当 `argocd login` 失败时（常见原因：context path `/dnet-int` 导致 gRPC-web 代理解析失败、`insecure` 证书、proxy 连接错误），**不阻塞退出**，改用内置的 Python HTTP API 客户端：
+
+```bash
+# 测试认证（自动从 .env / config / env 获取凭证）
+python -m argocd_api login
+
+# 查询应用
+python -m argocd_api list
+python -m argocd_api get hdops-mcp
+python -m argocd_api resource-tree hdops-mcp
+
+# Pod 操作
+python -m argocd_api find-pod hdops-mcp-66f64bb8c9-7tw6n
+python -m argocd_api resource hdops-mcp Pod hdops-mcp-66f64bb8c9-7tw6n --ns ops
+
+# 同步 / 刷新
+python -m argocd_api sync hdops-mcp
+python -m argocd_api refresh hdops-mcp
+
+# 删除资源（需二次确认）
+python -m argocd_api delete-resource hdops-mcp Pod hdops-mcp-xxx --ns ops
+
+# 查看渲染清单
+python -m argocd_api manifests hdops-mcp
+```
+
+`.env` 文件自动从 `argocd-skill/.env` 加载，无需手动指定 `--env-file`。凭证优先级：
+1. Shell env 的 `ARGOCD_AUTH_TOKEN`
+2. `~/.config/argocd/config` 中匹配的 token
+3. `.env` 中的 `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` → API login
+
+**常用 API 端点映射表（`python -m argocd_api` 底层调用）：**
+
+| 操作 | CLI 命令 | Python CLI | HTTP API |
+|------|----------|------------|----------|
+| 登录（获取 token） | `argocd login` | `python -m argocd_api login` | `POST /api/v1/session` |
+| 应用列表 | `argocd app list` | `python -m argocd_api list` | `GET /api/v1/applications` |
+| 应用详情 | `argocd app get <name>` | `python -m argocd_api get <name>` | `GET /api/v1/applications/{name}` |
+| 资源树（Pod 状态） | `argocd app wait --health` | `python -m argocd_api resource-tree <name>` | `GET /api/v1/applications/{name}/resource-tree` |
+| 查找 Pod | `kubectl get pod -A \| grep` | `python -m argocd_api find-pod <pod>` | 遍历所有 App 的 resource-tree |
+| Pod 详细规格 | `kubectl get pod -o yaml` | `python -m argocd_api resource <app> Pod <name> --ns <ns>` | `GET /api/v1/applications/{name}/resource` |
+| 删除 Pod | `kubectl delete pod` | `python -m argocd_api delete-resource <app> Pod <name> --ns <ns>` | `DELETE /api/v1/applications/{name}/resource` |
+| 同步 | `argocd app sync <name>` | `python -m argocd_api sync <name>` | `POST /api/v1/applications/{name}/sync` |
+| 创建应用 | `argocd app create` | （暂不支持，需 CLI） | `POST /api/v1/applications` |
 
 **与批量工具的对齐：** `python -m argocd_cli_gen` 生成的 `00_preflight.sh` 实现了同样的自检逻辑（env 检查 + `argocd version --client` + `argocd login --auth-token --grpc-web` + `argocd account get-user-info`）。能力 2（单条命令生成）走 LLM 提示阶段，能力 3.2 走 shell 落地阶段，**两阶段自检项必须一致**。
 
 **凭证处理硬性约束：**
 
-- `ARGOCD_AUTH_TOKEN` 永远**不回显**、**不写日志**、**不传非加密通道**；Agent 输出中一律 mask 为 `***`。
+- `ARGOCD_AUTH_TOKEN` / `ARGOCD_PASSWORD` 永远**不回显**、**不写日志**、**不传非加密通道**；Agent 输出中一律 mask 为 `***`。
 - `ARGOCD_SERVER` 永远不让用户在内联命令里以明文粘贴（用户已经在 env 里 export 过）；Agent 引用时写 `$ARGOCD_SERVER`。
 - `argocd login --username ... --password ...` 仅在交互场景使用；CI / 脚本场景一律走 `--auth-token "$ARGOCD_AUTH_TOKEN"`。

@@ -1,0 +1,1 @@
+"""ArgoCD HTTP API Client — Python alternative to `argocd` CLI."""

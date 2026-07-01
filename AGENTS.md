@@ -247,16 +247,38 @@ its core flow — if the user wants destructive ops, delegate to
 在 LLM 会话内处理**第一条** argocd CLI 命令前，agent 必须**先**
 做以下检查（不阻塞用户提问，但必须先告诉用户结果）：
 
+0. **从 `.env` 加载凭证（新增）**：检查 skill 仓库根目录（`argocd-skill/`）下
+   是否有 `.env` 文件，有则用 `set -a; source .env; set +a` 注入当前 env。
+   注入后 `.env` 中的 `ARGOCD_USERNAME`、`ARGOCD_PASSWORD`、`ARGOCD_SERVER`
+   等变量即可纳入后续检测流程。同名字段以 shell env 优先（`set -a` 不覆盖已设变量）。
+
 1. `command -v argocd` → 未找到则提示安装（参考
    `references/cli-installation.md`），并建议使用与 ArgoCD server
    兼容的版本。
+
 2. 认证凭证检测（按优先级）：
-   - `ARGOCD_AUTH_TOKEN` 已设 → 直接使用；
-   - `ARGOCD_AUTH_TOKEN` 未设但 `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` 均已设 → 使用用户名密码登录；
-   - 均未设 → 提示"sync / rollback / delete 等写操作将无法执行"，并提示可配置 `.env.example` 中的任一方式。
+   - **1st** `ARGOCD_AUTH_TOKEN`（shell env）已设 → 直接使用；
+   - **2nd** `~/.config/argocd/config` 有匹配 server 的 token → 复用免登录
+     （需读取 YAML 提取该 server 的 user auth-token + grpc-web-root-path）；
+   - **3rd** 上一步 `.env` 中的 `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` 均已设
+     → 使用用户名密码登录；
+   - **4th** `.env` 中的 `ARGOCD_AUTH_TOKEN` → 兜底使用；
+   - 均未设 → 提示"sync / rollback / delete 等写操作将无法执行"，
+     并提示可配置 `.env.example` 中的任一方式。
+
 3. `ARGOCD_SERVER` 是否已设 → 未设则提示并要求用户提供
    （**不要让用户把 token 直接粘到对话里**，提示设置 env 即可）。
-4. 若认证凭证 + server 均齐备，提示"环境就绪，可执行写操作"。
+
+4. **CLI login 失败 → HTTP API 回退（新增）**：当 `argocd login` 因 context
+   path（如 `/dnet-int`）、grpc-web 代理解析失败、insecure 证书等问题报错时，
+   不阻塞退出。改为用内置 Python 模块执行操作：
+   ```bash
+   python -m argocd_api login             # 自动处理凭证（config > .env）
+   python -m argocd_api find-pod <name>   # 查找 Pod
+   ```
+   该模块位于 `scripts/argocd_api/`，自动处理 3 层凭证优先级。
+
+5. 若认证凭证 + server 均齐备，提示"环境就绪，可执行写操作"。
 
 这套"LLM 端预检"与 `scripts/argocd_cli_gen/renderer.py` 顶部
 `SCRIPT_HEADER` 注释、`PREFLIGHT_SCRIPT` 中的 `00_preflight.sh`
@@ -276,9 +298,10 @@ LLM 端预检话术示例（agent 视角，不是给用户看的代码）：
 
 ```
 [preflight] 检测到 argocd CLI 已安装（v3.4.2）
-[preflight] ARGOCD_AUTH_TOKEN 已设（*** 屏蔽）
-        或：ARGOCD_USERNAME 已设（ARGOCD_AUTH_TOKEN 未配置）
-[preflight] ARGOCD_SERVER 已设（argocd.hd123.com）
+[preflight] 从 .env 加载凭证：ARGOCD_USERNAME=buhaiqing@hd123.com（*** 屏蔽）
+[preflight] 从 .env 加载：ARGOCD_SERVER=argocd.hd123.com（含 context path）
+[preflight] ~/.config/argocd/config 已有有效 token（*** 屏蔽），免登录
+[preflight] 或：ARGOCD_AUTH_TOKEN 已设（*** 屏蔽）
 [ok] 会话就绪，可执行写操作
 ```
 

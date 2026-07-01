@@ -1,3 +1,4 @@
 # Python: >= 3.8（依赖 PEP 563 `from __future__ import annotations` + dataclass + pathlib）
 PyYAML>=6.0
+requests>=2.28
 pytest>=7.0

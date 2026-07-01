@@ -6,8 +6,10 @@ description: |
   (2) 用自然语言生成 argocd CLI 命令（app create / sync / rollback / get / list / login 等 20 个高频操作）；
   (3) 把 1 个 ArgoCD Application YAML（spec.source / spec.sources / kustomize / helm / syncPolicy / App-of-Apps Root）翻译成等价的 `argocd app create` 命令；
   (4) 把整个 manifest 目录（如 argoapp 仓库、argo-apps/dly/production 等）批量反向生成 shell 脚本（迁移 / 重建 / 备份 / 灾备 / 新集群初始化 / GitOps 配置脚本化场景），调用内置工具 `python -m argocd_cli_gen`；
-  (5) 处理 ArgoCD CLI 不支持的边界（多源 spec.sources $values、kustomize.patches/components 等），引导用户回退到 `kubectl apply -f` 兜底方案。
-  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底.
+  (5) 处理 ArgoCD CLI 不支持的边界（多源 spec.sources $values、kustomize.patches/components 等），引导用户回退到 `kubectl apply -f` 兜底方案；
+  (6) 通过 HTTP API（`/api/v1`）执行 ArgoCD 操作，适用于 CLI（含 login 及运行时命令）因 context path / insecure / grpc-web 失败时的自动回退，支持 `python -m argocd_api` 查询/操作应用、Pod、资源树。
+  (7) 诊断分析：批量 OutOfSync App 根因归因（Git 新增/手动漂移/内容不一致/孤儿资源），调用内置工具 `python -m argocd_deploy_stats.oos_analyzer`。
+  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, OutOfSync, 根因归因, 漂移检测, OOS 分析.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
 
@@ -17,6 +19,82 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 
 为运维智能体提供 ArgoCD CLI 的三项核心能力。
 
+## 行为准则（执行前必读）— 🚫 强制遵守，不可违背
+
+> 源自 Andrej Karpathy 对 LLM 编程陷阱的观察。**本 skill 所有 Agent 必须无例外遵守，不得以任何理由绕过。** 违反即为缺陷，需立即纠正。
+
+### 准则一：想清楚再写（强制）
+**必须**把假设、权衡、备选方案摆在桌面上，不允许悄悄选其一。
+- 把假设明确说出来。不确定就问用户。
+- 有多种理解，全部摆出来，别自己悄悄选一个。
+- 有更简单的做法，直说。该反对的时候反对。
+- 哪里不清楚，停下来，说清楚卡在哪，然后问。
+
+### 准则二：简单优先（强制）
+**必须**用最少的东西把问题解决，任何多余的东西都是缺陷。
+- 不加用户没要求的功能。
+- 不给一次性的活儿搭一套通用框架。
+- 不加没要求的「灵活性」或「可配置」。
+- 不为不可能发生的情况提前操心。
+- 交付的东西明显比需要的多，砍到刚好够用，重来。
+- 问自己：资深工程师会不会觉得这过度复杂？会的，简化。
+
+### 准则三：外科手术式改动（强制）
+**必须**只动你必须动的，只收拾你自己制造的乱。
+- 不要去「改进」旁边没让你碰的内容、格式。
+- 不要翻新没坏的东西。
+- 跟着原本的风格走，哪怕你自己会用别的写法。
+- 看到无关的、原本就有的多余内容，提一句就行，别删。
+- 只收拾你这次改动产生的多余东西。
+- 一条判据：每一处改动，都要能直接追溯到用户的需求。
+
+### 准则四：目标驱动执行（强制）
+**必须**先定清楚「做到什么算成功」，再动手，且交付前必须自己验证达标。
+- 「把这个 manifest 转换」 → 「输出 `argocd app create` 命令，exit code 0，用户可执行」
+- 「帮我查 App 状态」 → 「给出 health/sync 状态，有异常则标注原因」
+- 复杂任务，先说简短计划，每步对应一个验证点。
+- 成功标准给得够强，自己就能对答案；标准太虚，只能不停来问用户。
+
+### 准则五：Ponytail — 最小代码优先（强制）
+
+> 源自 Ponytail 最佳实践：**最懒的方案只要能工作，就是正确的方案。** 最好的代码是根本没写的代码。
+
+**决策阶梯（遇到任何代码改动时，按顺序检查，stop at the first rung that holds）：**
+
+1. **真的需要它吗？**（YAGNI）没有这个功能能不能跑通？能就删。
+2. **项目里已有吗？** 复用现成的 util / helper / 类型，不重写。
+3. **标准库能搞定吗？** 用 stdlib，不引入新依赖。
+4. **平台原生能力够用吗？** Shell/Python 标准工具能做的事，不用额外脚本。
+5. **已装的依赖能解决吗？** 不为几行代码引入新包。
+6. **能一行搞定吗？** 一行能解决的，写一行。
+7. **最后才动手：** 写最小可工作的代码。
+
+**核心规则：**
+- **不加没要求的功能。** 接口只有一个实现就不写接口；一次性的活不搭通用框架。
+- **删除优于增加。** 能删就删，能不写就不写。
+- **diff 最短的不一定是最好的。** 在错的地方改最小的 diff 是第二个 bug。
+- **复杂度上身了再拆。** 在复杂度实际发生之前不预防性抽象。
+
+**代码中的有意简化用 `ponytail:` 注释标记，并说明升级路径：**
+```bash
+# ponytail: 串行拉 history（并发加到 50 若 throughput 不够）
+# ponytail: 全局异常捕获（分类型处理若需细分错误）
+```
+
+**输出格式：代码优先，解释最多三行。**
+- 先给可执行的命令/代码
+- 然后最多三行说明：跳过了什么，什么时候需要补全
+- 不要长篇大论，不要设计文档，不要 feature tour
+- 用户明确要求的解释、报告、流程说明例外（这些不是 debt）
+
+**什么情况下不要偷懒：**
+- 安全边界上的输入校验
+- 防止数据丢失的错误处理
+- 凭证/Token 屏蔽（永不回显）
+- 用户明确要求的功能（不要二次 argue，直接做）
+
+**理解问题永远排在懒之前。** 先完整读懂任务和代码，再爬梯子。跳过理解直接写 diff 的懒，是效率假扮的草率。
+
 ## 何时使用
 
 - 用户说"装一下 argocd"、"帮我安装 ArgoCD CLI"
@@ -24,6 +102,117 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 - 用户给了一个 ArgoCD Application YAML 需要转换为 CLI 命令
 - **用户给了一个 manifest 目录**，要批量反向生成 shell 脚本（迁移、备份、重建场景）
 - 用户编写 CI/CD 脚本中需要 argocd 命令
+
+## 会话开机自检协议（跨能力通用，会话首条命令前执行）
+
+每个会话处理第一条 argocd 相关命令前，Agent **必须**按以下顺序执行自检。自检结果应如 `[preflight]` 方式向用户显式标注（凭证屏蔽规则见下文）。
+
+### 0.1 从 `.env` 加载凭证
+
+Agent 收到第一条 argocd 命令时，**优先检查本 skill 仓库根目录下的 `.env` 文件**：
+
+```bash
+ENV_FILE="$(dirname "$(realpath "$0")")/../../.env"   # skill 仓库根目录
+# 实际检查：argocd-skill/.env 是否存在
+test -f "$ENV_FILE" && set -a; source "$ENV_FILE"; set +a
+```
+
+- `.env` 存在于 skill 仓库根目录时，自动 `source` 注入到当前 shell env
+- `.env.example` 是模板文件（**不自动加载**），所有变量默认注释
+- 注入后即纳入后续认证凭证检测流程
+
+### 0.2 认证凭证检测（4 层优先级）
+
+按最高优先级的可用凭证处理：
+
+| 优先级 | 凭证来源 | 说明 |
+|--------|---------|------|
+| **1** | `ARGOCD_AUTH_TOKEN`（shell env） | `argocd login --auth-token`，优先级最高 |
+| **2** | `~/.config/argocd/config` | 本地已保存的 token（`argocd login` 遗留上下文），**含 `grpc-web-root-path` / `insecure` 等 server 配置**，优先复用 |
+| **3** | 上一步 `.env` 中的 `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` | 走 HTTP API `/api/v1/session` 获取 token（见 0.4） |
+| **4** | `.env` 中的 `ARGOCD_AUTH_TOKEN` | `.env` 中的 token（不推荐，但作为后备兜底） |
+
+> **凭证屏蔽规则（铁律）：** 任何来源的 `ARGOCD_AUTH_TOKEN`、`ARGOCD_PASSWORD` 在 Agent 输出中一律 mask 为 `***`，**绝不回显**。
+
+### 0.3 `argocd` CLI 可用性与 `ARGOCD_SERVER`
+
+- `command -v argocd` → 未找到则提示安装（参考能力一）
+- `ARGOCD_SERVER` 是否已设 → 未设则提示用户设置
+
+### 0.4 CLI login 回退：HTTP API 模式（Python 编程语言实现）
+
+当 `argocd login` 失败时（常见原因：context path `/dnet-int` 导致 gRPC-web 代理解析失败、insecure 证书、proxy 配置），**不阻塞退出**，而是自动回退到内置的 Python HTTP API 客户端：
+
+```bash
+# 一键操作（自动处理 .env 加载 + 认证 + 执行）
+python -m argocd_api login                         # 测试认证连通性
+python -m argocd_api list                           # 列出所有应用
+python -m argocd_api get <app>                      # 获取应用详情
+python -m argocd_api find-pod <pod-name>            # 查找 Pod 所属应用及详情
+python -m argocd_api resource-tree <app>             # 查看应用资源树
+python -m argocd_api resource <app> Pod <name> --ns <ns>  # 获取 Pod 详细规格
+```
+
+auth 优先级自动处理（shell env > `~/.config/argocd/config` > `.env` username+password），无需手动传凭证。
+
+**模块位置：** `scripts/argocd_api/`
+**调用入口：** `python -m argocd_api <command> [options]`
+**依赖：** `requests`、`PyYAML`（已加入 `scripts/requirements.txt`）
+
+### 0.5 预检通过后状态复用
+
+自检通过的凭证在**同一会话内**默认沿用，复用规则同 2.4（会话内状态复用）。预检话术示例：
+
+```
+[preflight] 检测到 argocd CLI 已安装（v3.2.3）
+[preflight] 从 .env 加载凭证：ARGOCD_USERNAME=buhaiqing@hd123.com（*** 屏蔽）
+[preflight] 从 .env 加载：ARGOCD_SERVER=https://argocd.hd123.com/dnet-int
+[preflight] ~/.config/argocd/config 已有有效 token（*** 屏蔽），免登录
+[ok] 会话就绪，可执行读写操作
+```
+
+如果 CLI login 失败 + HTTP API token 也失败：
+
+```
+[preflight] ⚠️ argocd login 失败（context path 解析错误），已回退 HTTP API
+[preflight] ⚠️ HTTP API 认证也失败，请检查凭证
+[err] 会话不可用，请先 export ARGOCD_AUTH_TOKEN 后重试
+```
+
+### 0.6 运行时 CLI 命令回退协议（Agent 行为准则）
+
+预检通过后的会话中，Agent 生成的**任何** `argocd` CLI 命令执行失败时（context path 解析失败、grpc-web 代理错误、证书/ insecure 问题、连接超时等），**不得仅报错退出**，必须自动回退到 HTTP API 方式重试：
+
+| CLI 操作 | API 等价命令 |
+|----------|-------------|
+| `argocd app list` | `python -m argocd_api list` |
+| `argocd app get <name>` | `python -m argocd_api get <name>` |
+| `argocd app sync <name>` | `python -m argocd_api sync <name> [--revision <rev>]` |
+| `argocd app refresh <name>` | `python -m argocd_api refresh <name>` |
+| `argocd app manifests <name>` | `python -m argocd_api manifests <name>` |
+| `argocd app create <name> ...` | `python -m argocd_api create <name> -f <spec.json>`（POST /api/v1/applications） |
+| `argocd app rollback <name> <id>` | `python -m argocd_api rollback <name> --id <id>` |
+| `argocd app resources <name>` | `python -m argocd_api resource-tree <name>` |
+| `argocd app delete-resource <name>` | `python -m argocd_api delete-resource <name>` |
+| `argocd app terminate-op <name>` | `python -m argocd_api terminate-op <name>` |
+| 其他 `argocd app <sub>` | 先用 `python -m argocd_api --help` 查询是否支持；
+
+**回退规则（Agent 必须遵守）：**
+
+1. **首先生成 CLI 命令**：Agent 按能力二流程，首先生成 `argocd` CLI 命令。
+2. **用户反馈失败 → 自动回退**：用户反馈 CLI 执行失败时，Agent **必须自动输出等价的 API 命令**，无需用户重复描述意图。
+3. **结果格式对齐**：API 输出格式应与 CLI 输出对齐（同字段、同排列），让用户感觉是同一个工具。
+4. **API 也不支持 → `kubectl` 兜底**：若该操作无等价 API 端点（如 `argocd app logs`），输出 `kubectl` 兜底方案并说明原因。
+
+**Agent 输出话术示例：**
+
+```
+⚠️ CLI 执行失败（context path 解析错误），已回退 HTTP API
+→ python -m argocd_api sync my-app
+✅ 同步成功：my-app → Synced / Healthy
+```
+
+---
 
 ## 能力清单
 
@@ -51,6 +240,27 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 | `argocd app rollback APPNAME [HISTORY_ID]` | `APPNAME` | `HISTORY_ID`（省略则回上一版本） | — |
 | `argocd app set APPNAME` | `APPNAME` / `--sync-policy` | `--auto-prune` / `--self-heal`（与 `--sync-policy automated` 配对） | 三者同时给齐 |
 | `argocd app delete APPNAME` | `APPNAME` | `--cascade` | **必须二次确认（见 2.3）** |
+| `argocd app delete-resource APPNAME` | `APPNAME` / `--kind` / `--resource-name` / `--namespace` | `--force` / `--orphan` | **必须确认资源类型和标识符**（见 2.3） |
+| `argocd app refresh APPNAME` | `APPNAME` | `--hard`（强制硬刷新） | — |
+| `argocd app unset APPNAME` | `APPNAME` / 参数名 | — | **关闭自动化时必须确认**（见 2.3） |
+| `argocd app edit APPNAME` | `APPNAME` | — | 交互式编辑 |
+| `argocd app terminate-op APPNAME` | `APPNAME` | — | **必须二次确认**（见 2.3） |
+| `argocd app logs APPNAME` | `APPNAME` | `--follow` / `--tail` / `--kind` / `--name` / `--namespace` / `--container` | — |
+| `argocd app events APPNAME` | `APPNAME` | — | — |
+| `argocd app diff APPNAME` | `APPNAME` | `--namespace` | — |
+| `argocd app history APPNAME` | `APPNAME` | — | 输出 sync 历史 |
+| `argocd app wait APPNAME` | `APPNAME` | `--health` / `--suspended` / `--timeout` | 等 App 就绪 |
+| `argocd proj list/get/create/delete` | `PROJECT` | — | **delete 必须二次确认** |
+| `argocd proj add-source/remove-source` | `PROJECT` / `REPO_URL` | — | — |
+| `argocd proj add-destination/remove-destination` | `PROJECT` / `CLUSTER` / `NS` | — | — |
+| `argocd appset list/get` | `APPSET` | — | — |
+| `argocd appset delete` | `APPSET` | — | **必须二次确认** |
+| `argocd appset generate` | `APPSET` | — | 干跑生成所有 App |
+| `argocd account get-user-info` | — | — | 当前用户信息 |
+| `argocd account generate-token` | — | `--account` | 生成认证 token |
+| `argocd repo get/rm` | `URL` | — | **rm 必须二次确认** |
+| `argocd cluster get/rm` | `NAME` | — | **rm 必须二次确认** |
+| `argocd app list --output json` | — | `--project` / `-l label` | 输出 JSON 供后续分析 |
 
 **一次问完的提问模板**（针对 `app create`）：
 
@@ -262,6 +472,64 @@ out/
 - `2`：YAML 解析致命错误 / 输入目录下未发现任何 Application → 检查输入修复后重试
 - `3`：CLI 参数错误（路径不存在、`--sleep` 为负等）
 
+### 能力四：诊断分析（OutOfSync 根因归因）
+
+批量扫描所有 ArgoCD Application，筛选 OutOfSync 状态 App，通过 diff 分析自动归因：
+
+| 归因维度 | CLI 命令 | 判断依据 |
+|----------|---------|---------|
+| Git 新增/未部署 | `argocd app diff` | diff 中出现 `+` / `>` 行（Git 有，集群无） |
+| 手动漂移（集群多出） | `argocd app diff` | diff 中出现 `-` / `<` 行（集群有，Git 无） |
+| 内容不一致 | `argocd app diff` | 同时有新增和删除行 |
+| 孤儿资源 | `argocd app resources` | Orphaned 列值为 Yes |
+
+**调用方式：**
+```bash
+# 全量分析
+python -m argocd_deploy_stats.oos_analyzer
+
+# 只看最近 7 天 OutOfSync 的
+python -m argocd_deploy_stats.oos_analyzer --days 7
+
+# 指定项目
+python -m argocd_deploy_stats.oos_analyzer --project default
+
+# JSON 输出（供后续分析）
+python -m argocd_deploy_stats.oos_analyzer --output json
+```
+
+**输出示例（Markdown）：**
+```
+# ArgoCD OutOfSync 根因分析
+
+总 App 数：102，OutOfSync：12
+
+## 归因汇总
+| 原因 | 数量 |
+|------|------|
+| 手动漂移（集群多出 Git 没有的资源） | 7 |
+| Git 新增/未部署 | 3 |
+| 内容不一致 | 2 |
+
+### 手动漂移（7 个）
+- `app-1`（手动漂移; 孤儿: Pod/stale-pod）
+- `app-2`
+```
+
+**工具位置：** `scripts/argocd_deploy_stats/oos_analyzer.py`
+**依赖：** 仅 argocd CLI（无 Python 第三方依赖）
+
+**归因输出字段说明：**
+- `app` — 应用名称
+- `cause` — 归因结果（None 表示已 Sync）
+- `hasAdditions` — 是否有新增行
+- `hasDeletions` — 是否有删除行
+- `orphaned` — 孤儿资源列表
+- `diffRc` — diff 命令退出码
+
+> ⚠️ 注意：该工具每次运行时对每个 OOS App 执行 `argocd app resources` + `argocd app diff` 各一次（共 2 次 CLI 调用）。
+> 566 App 环境按 ~10% OOS 率计，约 110 次调用，预估耗时 ~2 分钟。若 ArgoCD server 吞吐有限，可通过 `--concurrency 2` 降低并发。
+
 ## App-of-Apps 与层级分布（基于 argoapp 仓库 97 YAML 全样本）
 
 生产环境常用 App-of-Apps 多级架构管理大量应用：
@@ -357,6 +625,25 @@ python -m argocd_cli_gen --input <dir> --output ./out --upsert --emit-dry-run
 ```
 然后向用户展示 `report.md` 摘要、回退条目数，以及 `run_all.sh` 的使用方法。
 
+### 能力四：诊断分析（OutOfSync 根因归因）
+
+**触发短语：**
+- "哪些 App 是 OutOfSync 的？什么原因？"
+- "帮我批量分析 OutOfSync 根因"
+- "看看有没有漂移的 App"
+- "OutOfSync 归因，按原因分类"
+- "有没有手动漂移的 App 和孤儿资源？"
+- "哪些 App Git 有但集群没有？"
+- "分析一下 production 项目的 OOS 情况"
+- "给我一份 OutOfSync 诊断报告（JSON 格式）"
+- "批量查所有 OutOfSync 的 App 是什么原因导致的"
+
+**任一触发 → Agent 应直接调用：**
+```bash
+python -m argocd_deploy_stats.oos_analyzer [--project <name>] [--days N] [--output json]
+```
+然后向用户展示归因汇总表 + 每种原因的 App 列表。
+
 ## 常见错误
 
 | 错误 | 正确处理 |
@@ -372,6 +659,10 @@ python -m argocd_cli_gen --input <dir> --output ./out --upsert --emit-dry-run
 | 运维组件错加 labels | k8s_ops 下 94% 应用无 labels，转换时不应臆造四件套 |
 | 业务应用错开 automated | 业务应用生产规范是手动触发 sync，**勿臆加 automated** |
 | 把 `CreateNamespace=false` 转成 `=true` | 运维组件 namespace 由 initns 单独 Application 管理，必须保持 `false` |
+| `argocd login` 因 context path / insecure 失败 | **不回退放弃**，改用 HTTP API `/api/v1/session` 获取 token + `python -m argocd_api` 执行操作（见 0.4） |
+| 运行时 CLI 命令失败仅报错、不自动回退 API | Agent **必须**自动输出等价的 `python -m argocd_api` 命令重试。同步失败 → `python -m argocd_api sync`，查看失败 → `python -m argocd_api get`，以此类推（见 0.6） |
+| OutOfSync 分析时 `argocd app diff` 执行超时 | 默认 timeout=30s，可追加 `--concurrency 2` 降低并发；diff 输出为空时归因为"未知差异" |
+| 孤儿资源检测基于 tabular 输出列尾 `Yes` | 若 ArgoCD 版本升级后 Orphaned 列格式变化，改为解析 `argocd app resources --output json` 的 orphaned 字段 |
 
 ## 参考资料
 
