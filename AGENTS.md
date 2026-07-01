@@ -1,38 +1,11 @@
+<!-- Universal rules in ~/.config/opencode/AGENTS.md -->
+
 # AGENTS.md — argocd-skill
 
 Repo-specific guidance for OpenCode/AI agents working in the
 `argocd-skill` repository. This file only records things an agent
 would otherwise get wrong in **this** repo. It is not a general
 ArgoCD tutorial.
-
-## 【不容商量，严格遵守】功能点开发必须使用 Git Worktree + 子 Agent
-
-每个功能点的开发**必须**在独立的 Git Worktree 中启动子 Agent 完成。规则如下：
-
-1. **主 Agent 不直接在 main 分支上写代码**。收到开发任务后，先创建 worktree：
-   ```bash
-   git worktree add ../argocd-skill-<feature-name> -b feature/<feature-name>
-   ```
-2. **子 Agent 在 worktree 中独立完成开发**：编写代码、运行测试、Ruff 检查、提交
-3. **主 Agent 负责审查、合并、清理**：
-   - 子 Agent 完成后，主 Agent 审查 worktree 中的变更
-   - 合并到 main 分支
-   - 删除 worktree：`git worktree remove ../argocd-skill-<feature-name>`
-4. **每个功能点完成后，worktree 必须删除**——不允许残留 worktree 占用磁盘
-5. **例外**：仅 < 5 行的 typo 修复 / 注释改动可跳过 worktree，直接在 main 修改
-
-**反面教材：**
-```bash
-# ❌ 直接在 main 分支上写新功能
-cd /Users/bohaiqing/opensource/git/argocd-skill
-# 直接开始写代码...
-
-# ✅ 正确流程
-git worktree add ../argocd-skill-new-feature -b feature/new-feature
-cd ../argocd-skill-new-feature
-# 在 worktree 中开发 → 测试 → 提交
-# 回到主仓库审查 → 合并 → 删除 worktree
-```
 
 ## Current state
 
@@ -55,7 +28,7 @@ argocd-skill/
 │   └── README.md             full tool usage manual
 ├── LICENSE                   MIT, 2026, buhaiqing
 ├── README.md                 repo overview
-└── AGENTS.md                 389 lines, this file
+└── AGENTS.md                 366 lines, this file
 ```
 
 **Repo state:** Three commits on `main`. `31775e0` is the initial
@@ -305,9 +278,10 @@ translating a YAML into `argocd app create …`:
   rejects underscores). But `--revision k8s_mas` (git branch) keeps
   underscores — that flag is git-revision, not app-name.
 
-## Self-reflection rule
+## Post-change self-reflection (argocd-specific)
 
-After **any** change to `SKILL.md` or its `references/` / `scripts/`:
+After the universal self-reflection in `~/.config/opencode/AGENTS.md`,
+also run these argocd-specific checks:
 
 1. Re-read the modified file from disk (do not trust memory).
 2. Verify the frontmatter parses (no tab indentation; `---` on its
@@ -339,82 +313,8 @@ After **any** change to `SKILL.md` or its `references/` / `scripts/`:
    `scripts/argocd_cli_gen/parser.py`'s classifier constants (or
    the test fixtures in `scripts/tests/fixtures/`).
 
-Report `[OK] argocd-skill v0.1.0 — N rounds clean` when round N
+Report `[OK] argocd-skill v0.2.0 — N rounds clean` when round N
 finds no new issues.
-
-## [IMPORTANT] 自动化测试要求
-
-每个功能点开发完成后，**必须**执行一轮完整的自动化测试，并修复发现的问题，确保功能回归质量稳定、功能迭代平稳推进。
-
-**详细流程、委托规则、质量标准、Hypothesis 属性测试** → 见 [references/testing-guide.md](references/testing-guide.md)
-
-## [IMPORTANT] 性能极致优化要求
-
-在保障功能正确的前提下，**尽可能做到高性能，优化到极致**。每个功能点开发完成并通过测试后，**必须**重新复盘性能表现，发现优化空间则立即调优。
-
-**详细复盘流程、检查清单、基准指标、优化记录格式** → 见 [references/performance-guide.md](references/performance-guide.md)
-
-## [IMPORTANT] Pythonic 极简风格
-
-代码实现上**尽量保持 Pythonic 风格**，功能正确前提下保持极简风格。具体规则：
-
-1. **一行能搞定的不要五行**：能用列表推导就不要写 for 循环 + append；能用 `dict.get()` 就不要 if/else
-2. **不要重复造轮子**：`collections`、`itertools`、`functools` 里有的就用，不要手写
-3. **减少嵌套**：早返回（early return）代替深层嵌套；卫语句（guard clause）优先
-4. **不要过度抽象**：函数只被调用一次就不要抽出来；类只有一个实例就不要写 class
-5. **字符串拼接用 f-string**：不要用 `.format()` 或 `%`
-6. **类型注解要简洁**：`dict[str, Any]` 而不是 `Dict[str, Any]`；用 `from __future__ import annotations`
-7. **死代码直接删**：不用的 import、注释掉的代码、永远不会走到的分支——删掉，git 有历史
-
-反面教材：
-```python
-# ❌ 过度工程
-def get_health_score(data: dict) -> float:
-    if data is not None:
-        if "health" in data:
-            if "score" in data["health"]:
-                return float(data["health"]["score"])
-    return 0.0
-
-# ✅ Pythonic
-def get_health_score(data: dict) -> float:
-    return float(data.get("health", {}).get("score", 0))
-```
-
-## [IMPORTANT] Ruff 代码质量检查
-
-每次代码变更后，**必须**运行 Ruff 检查并修复所有问题：
-
-```bash
-# 先 auto-fix 可修复项
-ruff check --fix scripts/argocd_insight/ 2>&1
-
-# 再手动修复剩余项（F841 未使用变量、E701 单行多语句等）
-ruff check scripts/argocd_insight/ 2>&1
-```
-
-**流程：**
-1. 代码改动完成后，立即运行 `ruff check --fix` 自动修复
-2. 检查剩余错误，手动修复（或用 `--unsafe-fixes` 处理隐藏修复）
-3. 再次运行 `ruff check` 确认 **All checks passed**
-4. 零 error 才允许提交
-
-**常见需手动修复的错误类型：**
-- `F841` — 未使用的局部变量 → 删除或改为 `_`
-- `F821` — 未定义的变量名 → 检查变量是否被其他逻辑引用
-- `E701` — 单行多语句 → 拆分为多行
-
-**反面教材：**
-```python
-# ❌ 忽略 ruff 检查直接提交
-res_rc, res_out = f_res.result()  # F841: res_rc 未使用
-if score >= 90: return "🟢"      # E701: 单行多语句
-
-# ✅ 修复后提交
-_, res_out = f_res.result()
-if score >= 90:
-    return "🟢"
-```
 
 ## Cross-skill delegation (provisional)
 
