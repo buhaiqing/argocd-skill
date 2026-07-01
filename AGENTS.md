@@ -605,6 +605,33 @@ perf: 优化 trend.compute_delta — 120ms → 35ms (-71%)
 | **P2 建议** | 可通过缓存/预计算获得 > 30% 收益 | 可记录 TODO，下一轮完成 |
 | **P3 锦上添花** | 微优化（< 20% 收益） | 仅在复盘时顺手完成，不单独提交 |
 
+## [IMPORTANT] Pythonic 极简风格 (Pythonic minimalism)
+
+代码实现上**尽量保持 Pythonic 风格**，功能正确前提下保持极简风格。具体规则：
+
+1. **一行能搞定的不要五行**：能用列表推导就不要写 for 循环 + append；能用 `dict.get()` 就不要 if/else
+2. **不要重复造轮子**：`collections`、`itertools`、`functools` 里有的就用，不要手写
+3. **减少嵌套**：早返回（early return）代替深层嵌套；卫语句（guard clause）优先
+4. **不要过度抽象**：函数只被调用一次就不要抽出来；类只有一个实例就不要写 class
+5. **字符串拼接用 f-string**：不要用 `.format()` 或 `%`
+6. **类型注解要简洁**：`dict[str, Any]` 而不是 `Dict[str, Any]`；用 `from __future__ import annotations`
+7. **死代码直接删**：不用的 import、注释掉的代码、永远不会走到的分支——删掉，git 有历史
+
+反面教材：
+```python
+# ❌ 过度工程
+def get_health_score(data: dict) -> float:
+    if data is not None:
+        if "health" in data:
+            if "score" in data["health"]:
+                return float(data["health"]["score"])
+    return 0.0
+
+# ✅ Pythonic
+def get_health_score(data: dict) -> float:
+    return float(data.get("health", {}).get("score", 0))
+```
+
 ## Cross-skill delegation (provisional)
 
 | Task | Delegate to |
