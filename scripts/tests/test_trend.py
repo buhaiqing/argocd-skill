@@ -9,7 +9,6 @@ import pytest
 
 from argocd_insight.snapshot_store import SnapshotStore
 from argocd_insight.trend import (
-    _count_by_severity,
     _extract_number,
     analyze_trend,
     compute_delta,
@@ -33,22 +32,6 @@ class TestExtractNumber:
 
     def test_deeply_nested(self):
         assert _extract_number({"a": {"b": {"c": 42}}}, "a", "b", "c") == 42.0
-
-
-class TestCountBySeverity:
-    def test_diagnose_apps(self):
-        data = {"apps": [{"severity": "critical"}, {"severity": "low"}]}
-        assert _count_by_severity(data, "critical") == 1
-
-    def test_list_input(self):
-        data = [{"severity": "high"}, {"severity": "high"}]
-        assert _count_by_severity(data, "high") == 2
-
-    def test_none(self):
-        assert _count_by_severity(None, "critical") == 0
-
-    def test_no_matching_key(self):
-        assert _count_by_severity({"x": 1}, "critical") == 0
 
 
 class TestComputeDelta:

@@ -71,7 +71,10 @@ argocd-skill/                  # the skill lives at the repo root (only one skil
 │   ├── cli-commands.md        # 20+ CLI commands, argocd.py method→CLI mapping
 │   ├── kustomize-mapping.md   # 字段→flag 映射表 (namePrefix, images, commonLabels, patches, components, …)
 │   ├── kustomize-examples.md  # 真实 YAML 转换示例 (含多源边界 + 命名规范)
-│   └── batch-conversion-design.md  # argocd_cli_gen 方案设计 + 可行性论证
+│   ├── batch-conversion-design.md  # argocd_cli_gen 方案设计 + 可行性论证
+│   ├── testing-guide.md       # 测试标准、委托规则、Hypothesis 属性测试
+│   ├── performance-guide.md   # 性能复盘流程、检查清单、基准指标
+│   └── agent-protocols.md     # 开机预检协议、CLI 回退协议
 └── scripts/                   # the argocd_cli_gen batch tool + tests
     ├── argocd_cli_gen/        # python -m argocd_cli_gen
     │   ├── __init__.py
@@ -242,116 +245,10 @@ invocation. This skill does **not** exercise destructive paths in
 its core flow — if the user wants destructive ops, delegate to
 `kubectl` or run a custom script.
 
-### 能力二开机环境检查（会话开头）
+## Agent 协议（详见 [references/agent-protocols.md](references/agent-protocols.md)）
 
-在 LLM 会话内处理**第一条** argocd CLI 命令前，agent 必须**先**
-做以下检查（不阻塞用户提问，但必须先告诉用户结果）：
-
-0. **从 `.env` 加载凭证（新增）**：检查 skill 仓库根目录（`argocd-skill/`）下
-   是否有 `.env` 文件，有则用 `set -a; source .env; set +a` 注入当前 env。
-   注入后 `.env` 中的 `ARGOCD_USERNAME`、`ARGOCD_PASSWORD`、`ARGOCD_SERVER`
-   等变量即可纳入后续检测流程。同名字段以 shell env 优先（`set -a` 不覆盖已设变量）。
-
-1. `command -v argocd` → 未找到则提示安装（参考
-   `references/cli-installation.md`），并建议使用与 ArgoCD server
-   兼容的版本。
-
-2. 认证凭证检测（按优先级）：
-   - **1st** `ARGOCD_AUTH_TOKEN`（shell env）已设 → 直接使用；
-   - **2nd** `~/.config/argocd/config` 有匹配 server 的 token → 复用免登录
-     （需读取 YAML 提取该 server 的 user auth-token + grpc-web-root-path）；
-   - **3rd** 上一步 `.env` 中的 `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` 均已设
-     → 使用用户名密码登录；
-   - **4th** `.env` 中的 `ARGOCD_AUTH_TOKEN` → 兜底使用；
-   - 均未设 → 提示"sync / rollback / delete 等写操作将无法执行"，
-     并提示可配置 `.env.example` 中的任一方式。
-
-3. `ARGOCD_SERVER` 是否已设 → 未设则提示并要求用户提供
-   （**不要让用户把 token 直接粘到对话里**，提示设置 env 即可）。
-
-4. **CLI login 失败 → HTTP API 回退（新增）**：当 `argocd login` 因 context
-   path（如 `/dnet-int`）、grpc-web 代理解析失败、insecure 证书等问题报错时，
-   不阻塞退出。改为用内置 Python 模块执行操作：
-   ```bash
-   python -m argocd_api login             # 自动处理凭证（config > .env）
-   python -m argocd_api find-pod <name>   # 查找 Pod
-   ```
-   该模块位于 `scripts/argocd_api/`，自动处理 3 层凭证优先级。
-
-5. 若认证凭证 + server 均齐备，提示"环境就绪，可执行写操作"。
-
-这套"LLM 端预检"与 `scripts/argocd_cli_gen/renderer.py` 顶部
-`SCRIPT_HEADER` 注释、`PREFLIGHT_SCRIPT` 中的 `00_preflight.sh`
-是**同一协议的两端**：
-
-- 脚本端：`00_preflight.sh` 在每批 `argocd app create` 之前显式
-  `argocd login --auth-token $ARGOCD_AUTH_TOKEN --grpc-web` 并
-  `argocd account get-user-info` 校验。
-- LLM 端：会话开头一次性检查 + 显式标注。会话内后续命令默认
-  `argocd login` 已完成，不再重复 prompt（与 `00_preflight.sh`
-  的"建立全局 session"行为一致）。
-
-措辞必须保持一致——同一份凭证/同一套协议，LLM 端和脚本端的报错
-应该让用户感觉是同一个工具在用。
-
-LLM 端预检话术示例（agent 视角，不是给用户看的代码）：
-
-```
-[preflight] 检测到 argocd CLI 已安装（v3.4.2）
-[preflight] 从 .env 加载凭证：ARGOCD_USERNAME=buhaiqing@hd123.com（*** 屏蔽）
-[preflight] 从 .env 加载：ARGOCD_SERVER=argocd.hd123.com（含 context path）
-[preflight] ~/.config/argocd/config 已有有效 token（*** 屏蔽），免登录
-[preflight] 或：ARGOCD_AUTH_TOKEN 已设（*** 屏蔽）
-[ok] 会话就绪，可执行写操作
-```
-
-### CLI 运行时回退协议（任何命令失败 → API 自动重试）
-
-预检通过后，Agent 生成的**任何** `argocd` CLI 命令执行失败时，必须自动回退到 `python -m argocd_api` 等价命令重试，**不得仅报错退出**。
-
-**回退流程：**
-
-```
-用户描述意图
-  ↓
-Agent 生成 CLI 命令（argocd app sync my-app --prune）
-  ↓
-用户执行并反馈失败（context path / grpc-web / 证书 / 超时）
-  ↓
-Agent 自动输出等价 API 命令
-  python -m argocd_api sync my-app
-  ↓
-API 结果格式化输出（与 CLI 对齐）
-```
-
-**回退映射表（Agent 必须熟记）：**
-
-| 用户意图 | CLI 命令 | API 回退命令 |
-|----------|---------|-------------|
-| 应用列表 | `argocd app list` | `python -m argocd_api list` |
-| 应用详情 | `argocd app get <name>` | `python -m argocd_api get <name>` |
-| 同步 | `argocd app sync <name>` | `python -m argocd_api sync <name>` |
-| 刷新 | `argocd app refresh <name>` | `python -m argocd_api refresh <name>` |
-| Manifest | `argocd app manifests <name>` | `python -m argocd_api manifests <name>` |
-| 创建应用 | `argocd app create <name>` | `python -m argocd_api create <name> -f <spec.json>` |
-| 回滚 | `argocd app rollback <name> <id>` | `python -m argocd_api rollback <name> --id <id>` |
-| 资源树 | `argocd app resources <name>` | `python -m argocd_api resource-tree <name>` |
-| 删除资源 | `argocd app delete-resource <name>` | `python -m argocd_api delete-resource <name>` |
-| 终止操作 | `argocd app terminate-op <name>` | `python -m argocd_api terminate-op <name>` |
-
-**3 条铁律：**
-
-1. **自动匹配，不等待用户提示**：CLI 失败后 Agent 自行判断等价的 API 命令并直接输出，不需用户说"换 API 试试"。
-2. **结果格式对齐**：API 输出格式尽量与 CLI 一致（同字段名、同排序），让用户感觉是同一工具在运作。
-3. **API 也不支持 → `kubectl`**：若该操作无对应 API（如 `argocd app logs`），输出 `kubectl` 兜底并说明原因。
-
-**话术模板：**
-
-```
-⚠️ CLI 执行失败（context path 解析错误），已回退 HTTP API
-→ python -m argocd_api sync my-app
-✅ 同步成功：my-app → Synced / Healthy
-```
+- **能力二开机环境检查**：会话开头预检 → 认证凭证检测 → CLI/API 回退
+- **CLI 运行时回退协议**：CLI 失败 → 自动回退 `python -m argocd_api` → 3 条铁律
 
 ## App-of-Apps 4-tier production model
 
@@ -416,196 +313,19 @@ After **any** change to `SKILL.md` or its `references/` / `scripts/`:
 Report `[OK] argocd-skill v0.1.0 — N rounds clean` when round N
 finds no new issues.
 
-## [IMPORTANT] 自动化测试要求 (Automated testing requirements)
+## [IMPORTANT] 自动化测试要求
 
 每个功能点开发完成后，**必须**执行一轮完整的自动化测试，并修复发现的问题，确保功能回归质量稳定、功能迭代平稳推进。
 
-### 测试执行流程 (Test execution flow)
+**详细流程、委托规则、质量标准、Hypothesis 属性测试** → 见 [references/testing-guide.md](references/testing-guide.md)
 
-```
-功能代码实现完成
-  ↓
-主 agent 委托子 agent 运行全量测试套件
-  ↓
-子 agent 返回结果 → 主 agent 判断
-  ↓
-测试通过率 = 100%？ ─── 否 → 主 agent 定位 + 修复 → 重新委托
-  ↓ 是
-自审代码质量（类型安全 / 死代码 / 注释清理）
-  ↓
-主 agent 委托子 agent 运行性能基准
-  ↓
-提交并合并到 main
-```
-
-### [IMPORTANT] 测试执行委托规则 (Test delegation rule)
-
-**所有单元测试的执行必须委托给子 agent**，主 agent 不直接运行 pytest。规则如下：
-
-1. **主 agent** 负责编写/修改测试代码，但**不执行**测试命令
-2. **子 agent**（`task(category="quick")` 或 `task(subagent_type="deep")`）负责执行测试并返回结果
-3. 主 agent 根据子 agent 返回的结果决定下一步（通过 → 提交；失败 → 修复后重新委托）
-4. 测试执行的超时、重试、环境准备均由子 agent 管理
-
-委托示例：
-```python
-task(
-    category="quick",
-    description="run argocd-insight tests",
-    prompt="cd /Users/bohaiqing/opensource/git/argocd-skill/scripts && python3 -m pytest tests/ -v --tb=short 2>&1 | tail -50",
-    run_in_background=False,
-)
-```
-
-**例外**：单文件 < 5 行的 typo 修复可跳过委托，直接用 `lsp_diagnostics` 验证。
-
-### 测试命令 (Test commands)
-
-```bash
-# 推荐：从 scripts/ 目录运行（pytest 自动发现 tests/）
-cd scripts/
-python3 -m pytest tests/ -v
-
-# 并行执行（需安装 pytest-xdist）
-python3 -m pytest tests/ -v -n auto
-
-# 仅运行新增/修改模块的测试
-python3 -m pytest tests/test_<module>.py -v
-
-# 带覆盖率（可选）
-python3 -m pytest tests/ -v --cov=argocd_insight --cov-report=term-missing
-```
-
-### 测试质量标准 (Test quality standards)
-
-| 维度 | 要求 |
-|---|---|
-| **外部依赖** | 所有外部服务（ArgoCD API / K8s API / HTTP）必须通过 mock 隔离；禁止依赖 live 连接 |
-| **临时目录** | 使用 pytest `tmp_path` fixture，禁止 `tempfile.mkdtemp()`（自动清理 + 线程安全） |
-| **Mock 粒度** | mock 到具体模块路径（如 `unittest.mock.patch('argocd_insight.module.func')`），禁止过度 mock |
-| **覆盖范围** | 每个公开函数至少 1 个正向 + 1 个异常/边界测试；CLI 入口必须测试 |
-| **断言具体** | 禁止 `assert result`（无信息量）；使用 `assert result["key"] == expected_value` |
-| **测试隔离** | 测试间无状态共享；fixture 作用域默认 `function`（除非明确需要 `session`） |
-
-### Hypothesis 属性测试 (Hypothesis property-based testing)
-
-对于具有确定性输入→输出映射的纯函数模块，**推荐**使用 [Hypothesis](https://hypothesis.readthedocs.io/) 进行属性测试：
-
-| 适用模块 | 属性测试示例 |
-|---|---|
-| `parser.py` (4-tier 分类) | 输入任意 namespace + name → 输出固定 tier ∈ {root, root_entry, business, ops} |
-| `mapper.py` (字段→flag 映射) | 输入任意 Kustomize 字段路径 → 输出对应的 CLI flag |
-| `trend.py` (统计计算) | 输入任意 delta → pct_change == (last - first) / first × 100 |
-| `report_composer.py` (截断) | 任意输入文本 → len(output) ≤ max_lines |
-
-不适用场景：需要外部 IO、非纯函数、简单组合逻辑（如 `_summarize_module`）。
-
-Hypothesis 用法示例：
-
-```python
-from hypothesis import given, strategies as st
-
-@given(st.floats(min_value=0, max_value=1_000_000), st.floats(min_value=0, max_value=1_000_000))
-def test_pct_change_property(first, last):
-    result = compute_delta([make_snapshot(first), make_snapshot(last)], "metric")
-    if first > 0:
-        assert result["pct_change"] == pytest.approx((last - first) / first * 100)
-```
-
-### 性能回归保护 (Performance regression guard)
-
-测试套件的执行时间本身也是质量指标：
-
-| 基线 | 阈值 |
-|---|---|
-| 97-YAML 全样本处理 | < 1s |
-| 500-app 批量处理 | < 5s |
-| 完整测试套件（pytest -v） | < 10s |
-
-若测试时间显著增加，需检查是否有：
-- 未 mock 的外部 IO
-- 过大的测试数据 fixture
-- 重复的 setup/teardown 开销
-
-## [IMPORTANT] 性能极致优化要求 (Performance optimization to the extreme)
+## [IMPORTANT] 性能极致优化要求
 
 在保障功能正确的前提下，**尽可能做到高性能，优化到极致**。每个功能点开发完成并通过测试后，**必须**重新复盘性能表现，发现优化空间则立即调优。
 
-### 性能复盘流程 (Performance review flow)
+**详细复盘流程、检查清单、基准指标、优化记录格式** → 见 [references/performance-guide.md](references/performance-guide.md)
 
-```
-功能点开发完成 + 测试通过
-  ↓
-性能复盘（逐项检查）
-  ↓
-有优化空间？ ─── 否 → 记录"无优化点"，进入下一轮
-  ↓ 是
-量化优化收益（时间/空间复杂度对比）
-  ↓
-实施优化 + 回归测试验证
-  ↓
-记录优化结果（Before / After / 收益百分比）
-  ↓
-提交合并
-```
-
-### 性能复盘检查清单 (Performance review checklist)
-
-| 维度 | 检查项 | 优化方向 |
-|---|---|---|
-| **算法复杂度** | 是否存在 O(n²) 或更高复杂度的嵌套循环 | 改用 O(n) 或 O(n log n) 算法；考虑缓存/索引 |
-| **数据结构** | 列表查找是否频繁（`in list` → O(n)） | 改用 `set` / `dict` 做 O(1) 查找 |
-| **IO 开销** | 是否存在不必要的重复文件读写 | 批量读取；缓存中间结果；避免 N+1 模式 |
-| **内存占用** | 是否一次性加载全部数据到内存 | 改用流式处理 / 生成器 / 分块读取 |
-| **正则编译** | 是否在循环内重复编译正则 | 提升为模块级常量 `re.compile()` |
-| **字符串拼接** | 是否在循环内用 `+` 拼接长字符串 | 改用 `"".join()` 或 `io.StringIO` |
-| **import 延迟** | 是否在函数内 `import` 仅在该函数使用的模块 | 提升到文件顶部（除非是循环依赖或条件导入） |
-| **序列化开销** | 是否频繁 `json.dumps/loads` 相同数据 | 缓存序列化结果；仅在输出时序列化一次 |
-
-### 性能基准指标 (Performance benchmarks)
-
-| 操作 | 当前基线 | 目标上限 |
-|---|---|---|
-| 97-YAML 全样本处理 | < 1s | < 500ms |
-| 500-app 批量处理 | < 5s | < 2s |
-| 单模块 CLI 子命令响应 | < 100ms | < 50ms |
-| 快照保存/加载 | < 50ms | < 20ms |
-| 趋势分析（10 快照） | < 100ms | < 50ms |
-| 测试套件执行 | < 10s | < 5s |
-
-### 优化记录格式 (Optimization log format)
-
-每次性能复盘和优化必须在 commit message 中记录：
-
-```
-perf: 优化 <模块名> <操作> — <Before> → <After> (<收益百分比>)
-
-- 问题：描述性能瓶颈
-- 方案：采用的优化策略
-- 效果：量化收益（时间/内存/IO）
-- 回归：测试通过率 100%
-```
-
-示例：
-```
-perf: 优化 trend.compute_delta — 120ms → 35ms (-71%)
-
-- 问题：每次调用都重新遍历 snapshots 列表查找目标指标
-- 方案：预构建指标→值索引 dict，O(1) 直接访问
-- 效果：10 个快照 × 5 指标场景从 120ms 降至 35ms
-- 回归：测试通过率 100%（308/308）
-```
-
-### 优化优先级 (Optimization priority)
-
-| 优先级 | 场景 | 说明 |
-|---|---|---|
-| **P0 必须** | 存在 O(n²) 以上复杂度且 n > 100 | 直接阻塞交付 |
-| **P1 强烈建议** | 可通过数据结构变更获得 > 50% 收益 | 在本轮功能点内完成 |
-| **P2 建议** | 可通过缓存/预计算获得 > 30% 收益 | 可记录 TODO，下一轮完成 |
-| **P3 锦上添花** | 微优化（< 20% 收益） | 仅在复盘时顺手完成，不单独提交 |
-
-## [IMPORTANT] Pythonic 极简风格 (Pythonic minimalism)
+## [IMPORTANT] Pythonic 极简风格
 
 代码实现上**尽量保持 Pythonic 风格**，功能正确前提下保持极简风格。具体规则：
 
@@ -632,7 +352,7 @@ def get_health_score(data: dict) -> float:
     return float(data.get("health", {}).get("score", 0))
 ```
 
-## [IMPORTANT] Ruff 代码质量检查 (Ruff code quality check)
+## [IMPORTANT] Ruff 代码质量检查
 
 每次代码变更后，**必须**运行 Ruff 检查并修复所有问题：
 
