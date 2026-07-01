@@ -16,7 +16,8 @@ description: |
   (12) 资源成本估算：查询 ArgoCD App 的部署资源（CPU/Memory requests），估算运行成本，输出成本概览 + Top 10 高成本 App，调用内置工具 `python -m argocd_insight cost`。
   (13) 批量自动修复：基于诊断结果自动修复问题 App（sync OutOfSync / rollback Degraded），支持 dry-run 预览，调用内置工具 `python -m argocd_insight autofix`。
   (14) 变更影响分析：操作前预览 sync/rollback 会影响哪些资源、依赖关系、风险评估，调用内置工具 `python -m argocd_insight impact`。
-  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析, 自动修复, 批量修复, autofix, 变更影响, 影响分析, impact, 操作前预览.
+   (15) 批量操作：对指定 App 列表或筛选条件（project/label/status）批量并发执行 sync/rollback/refresh，支持 dry-run 预览和并发度控制，调用内置工具 `python -m argocd_insight batch`。
+  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析, 自动修复, 批量修复, autofix, 变更影响, 影响分析, impact, 操作前预览, 批量操作, 批量同步, 并发执行, batch.
   Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
@@ -538,6 +539,64 @@ python -m argocd_deploy_stats.oos_analyzer --output json
 > ⚠️ 注意：该工具每次运行时对每个 OOS App 执行 `argocd app resources` + `argocd app diff` 各一次（共 2 次 CLI 调用）。
 > 566 App 环境按 ~10% OOS 率计，约 110 次调用，预估耗时 ~2 分钟。若 ArgoCD server 吞吐有限，可通过 `--concurrency 2` 降低并发。
 
+### 能力五：批量操作（Batch Operations）
+
+对指定 App 列表或筛选条件（project/label/status）批量并发执行 sync/rollback/refresh，支持 dry-run 预览和并发度控制。
+
+**调用方式：**
+```bash
+# 按项目过滤并同步
+python -m argocd_insight batch sync --project my-project
+
+# 按标签过滤并回滚 Degraded 应用
+python -m argocd_insight batch rollback --label env=production
+
+# 按状态过滤并刷新
+python -m argocd_insight batch refresh --status Degraded
+
+# 操作所有应用（dry-run 预览）
+python -m argocd_insight batch sync --all --dry-run
+
+# 指定应用列表
+python -m argocd_insight batch sync --apps app1 app2 app3
+
+# 控制并发度
+python -m argocd_insight batch rollback --status Degraded --concurrency 10
+
+# JSON 输出
+python -m argocd_insight batch sync --project prod --output json
+```
+
+**支持的操作：** `sync` / `rollback` / `refresh`
+
+**筛选条件：** `--project` / `--label` / `--status` / `--apps` / `--all`（至少指定一个）
+
+**可选参数：**
+- `--dry-run` — 预览操作，不实际执行
+- `--concurrency N` — 并发数（默认 5）
+- `--timeout N` — 单个操作超时秒数（默认 120）
+- `--output markdown|json` — 输出格式
+
+**输出示例（Markdown）：**
+```
+# Batch Operation Summary
+
+**Operation:** sync
+**Total:** 15
+**Succeeded:** 14
+**Failed:** 1
+
+## ✅ Succeeded
+- app-1 (2.3s): sync succeeded
+- app-2 (1.8s): sync succeeded
+
+## ❌ Failed
+- app-3: sync failed: timeout
+```
+
+**工具位置：** `scripts/argocd_insight/batch.py`
+**依赖：** 仅 argocd CLI（无 Python 第三方依赖）
+
 ## App-of-Apps 与层级分布（基于 argoapp 仓库 97 YAML 全样本）
 
 生产环境常用 App-of-Apps 多级架构管理大量应用：
@@ -793,6 +852,30 @@ python -m argocd_insight report-push --file report.md --webhook <url>
 
 **工具位置：** `scripts/argocd_insight/report_push.py`
 **依赖：** 仅 Python 标准库（urllib + json）
+
+### 能力八：批量操作（Batch Operations）
+
+**触发短语：**
+- "批量同步所有 OutOfSync 的 App"
+- "把所有 Degraded 的应用回滚到上一版本"
+- "刷新 production 项目下所有 App"
+- "把 label 为 env=production 的 App 全部同步"
+- "批量操作，先 dry-run 预览一下"
+- "并发执行 sync，控制并发数为 10"
+- "给我一份批量操作报告（JSON 格式）"
+- "按项目过滤，批量回滚"
+- "把状态为 Missing 的应用全部刷新"
+- "给指定列表的 App 批量执行 sync"
+
+**任一触发 → Agent 应直接调用：**
+```bash
+# 常用变体
+python -m argocd_insight batch sync --status OutOfSync
+python -m argocd_insight batch rollback --status Degraded
+python -m argocd_insight batch refresh --all --dry-run
+python -m argocd_insight batch sync --project prod --concurrency 10 --output json
+```
+然后向用户展示批量操作汇总结果（成功数 / 失败数 / 详情列表）。
 
 ## 常见错误
 
