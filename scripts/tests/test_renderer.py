@@ -282,19 +282,32 @@ def test_main_scripts_do_not_embed_auth_args():
 
 
 def test_preflight_does_login_with_token():
-    """P0 回归：00_preflight.sh 应执行 `argocd login --auth-token`，
+    """P0 回归：00_preflight.sh 应支持 token 或用户名密码登录，
     建立全局 session 供后续脚本复用。
     """
     lm = _make_lm(BUSINESS_YAML)
     result = renderer.render_all([lm], source_dir=Path("/in"), opts=RenderOptions())
     preflight = next(s for s in result.scripts if s.relative_path == "00_preflight.sh")
 
-    assert 'ARGOCD_AUTH_TOKEN:?' in preflight.body, "preflight 仍应强校验 ARGOCD_AUTH_TOKEN"
+    # 优先级：ARGOCD_AUTH_TOKEN > ARGOCD_USERNAME + ARGOCD_PASSWORD
+    assert 'ARGOCD_AUTH_TOKEN' in preflight.body, "preflight 应支持 ARGOCD_AUTH_TOKEN"
+    assert 'ARGOCD_USERNAME' in preflight.body, "preflight 应支持 ARGOCD_USERNAME 备用"
+    assert 'ARGOCD_PASSWORD' in preflight.body, "preflight 应支持 ARGOCD_PASSWORD 备用"
     assert "argocd login" in preflight.body, "preflight 应执行 argocd login 建立 session"
-    assert "--auth-token" in preflight.body
     assert "--grpc-web" in preflight.body
     assert "command -v argocd" in preflight.body
     assert "argocd account get-user-info" in preflight.body
+
+
+def test_preflight_requires_argocd_server():
+    """ARGOCD_SERVER 必须设置，并有 URL 格式校验。"""
+    lm = _make_lm(BUSINESS_YAML)
+    result = renderer.render_all([lm], source_dir=Path("/in"), opts=RenderOptions())
+    preflight = next(s for s in result.scripts if s.relative_path == "00_preflight.sh")
+
+    assert "ARGOCD_SERVER:?" in preflight.body, "ARGOCD_SERVER 应为必填"
+    assert "https?://" in preflight.body, "应有 URL 格式校验（http:// 或 https://）"
+    assert "必须以 http:// 或 https:// 开头" in preflight.body, "错误提示应说明正确格式"
 
 
 def test_run_all_dry_run_body_uses_dry_run_subscripts():

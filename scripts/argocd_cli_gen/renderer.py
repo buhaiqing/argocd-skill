@@ -41,20 +41,59 @@ PREFLIGHT_SCRIPT = """#!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\\n\\t'
 
-: "${{ARGOCD_AUTH_TOKEN:?need ARGOCD_AUTH_TOKEN env var}}"
-: "${{ARGOCD_SERVER:=argocd.hd123.com}}"
+# ── 0. trim 所有 ARGOCD_* 环境变量（去除首尾空白） ───────────────────
+for var in ARGOCD_SERVER ARGOCD_AUTH_TOKEN ARGOCD_USERNAME ARGOCD_PASSWORD; do
+  if [[ -v "$var" ]]; then
+    # 循环去除尾部换行/空格，再去首部（防止多行 token 的尾部换行问题）
+    while [[ "${{!var}}" =~ [[:space:]]$ ]]; do
+      declare "$var=${{!var%[[:space:]]}}"
+    done
+    while [[ "${{!var}}" =~ ^[[:space:]] ]]; do
+      declare "$var=${{!var#[[:space:]]}}"
+    done
+  fi
+done
 
+# ── 1. ARGOCD_SERVER 必填 + URL 格式校验 ─────────────────────────────
+: "${{ARGOCD_SERVER:?未设置 ARGOCD_SERVER 环境变量，参见 .env.example}}"
+
+if [[ ! "$ARGOCD_SERVER" =~ ^https?:// ]]; then
+  echo "[error] ARGOCD_SERVER 格式错误：$ARGOCD_SERVER" >&2
+  echo "       正确格式示例：https://argocd.hd123.com/dnet-int" >&2
+  echo "       必须以 http:// 或 https:// 开头" >&2
+  exit 1
+fi
+
+# ── 2. argocd CLI 可执行性检查 ───────────────────────────────────────
 if ! command -v argocd >/dev/null 2>&1; then
   echo "[error] argocd CLI not found in PATH" >&2
+  echo "       参见 references/cli-installation.md 安装 ArgoCD CLI" >&2
   exit 2
 fi
 
 argocd version --client
 
-argocd login "$ARGOCD_SERVER" \\
-  --auth-token "$ARGOCD_AUTH_TOKEN" \\
-  --grpc-web
+# ── 3. 认证凭证检测（优先级：token > 用户名密码） ─────────────────────
+if [[ -n "${{ARGOCD_AUTH_TOKEN:-}}" ]]; then
+  echo "[preflight] 使用 ARGOCD_AUTH_TOKEN 登录 → $ARGOCD_SERVER"
+  argocd login "$ARGOCD_SERVER" \\
+    --auth-token "$ARGOCD_AUTH_TOKEN" \\
+    --grpc-web
+elif [[ -n "${{ARGOCD_USERNAME:-}}" && -n "${{ARGOCD_PASSWORD:-}}" ]]; then
+  echo "[preflight] 使用 ARGOCD_USERNAME/PASSWORD 登录 → $ARGOCD_SERVER"
+  argocd login "$ARGOCD_SERVER" \\
+    --username "$ARGOCD_USERNAME" \\
+    --password "$ARGOCD_PASSWORD" \\
+    --grpc-web
+else
+  echo "[error] 缺少认证凭证：需要配置以下任一方式：" >&2
+  echo "       方式一：ARGOCD_AUTH_TOKEN（推荐）" >&2
+  echo "       方式二：ARGOCD_USERNAME + ARGOCD_PASSWORD" >&2
+  echo "       参见 .env.example" >&2
+  exit 1
+fi
 
+# ── 4. 登录后会话校验 ────────────────────────────────────────────────
 argocd account get-user-info
 
 echo "[ok] pre-flight checks passed; session ready"

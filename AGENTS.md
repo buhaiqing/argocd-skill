@@ -157,8 +157,10 @@ the failure mode you are introducing.
 
 | Placeholder / var | Source | Agent action |
 |---|---|---|
-| `ARGOCD_AUTH_TOKEN` | env, exported by user | NEVER echo, mask as `***`, fail if unset |
-| `ARGOCD_SERVER` | env, e.g. `argocd.hd123.com` | NEVER ask user to paste; fail if unset |
+| `ARGOCD_AUTH_TOKEN` | env, exported by user | NEVER echo, mask as `***`; 优先使用 |
+| `ARGOCD_USERNAME` | env, exported by user | 备用：ARGOCD_AUTH_TOKEN 未设时使用 |
+| `ARGOCD_PASSWORD` | env, exported by user | 备用：ARGOCD_AUTH_TOKEN 未设时使用 |
+| `ARGOCD_SERVER` | env, e.g. `https://argocd.hd123.com/dnet-int` | NEVER ask user to paste; 支持带 context path 的 base URL |
 | `{{user.app_name}}` | user input | Ask once; reuse |
 | `{{user.namespace}}` | user input (业务 / 运维) | Ask once; reuse |
 | `{{user.project}}` | AppProject name (NOT user project) | Ask once; reuse |
@@ -172,9 +174,10 @@ the failure mode you are introducing.
 
 Credential priority order (highest first):
 
-1. Shell env vars (`ARGOCD_AUTH_TOKEN`, `ARGOCD_SERVER`).
-2. `~/.config/argocd/config` (the `argocd login` write target).
-3. Interactive `argocd login` (SSO / OIDC) — only when no token is set.
+1. `ARGOCD_AUTH_TOKEN` — 优先使用，自动化场景推荐。
+2. `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` — ARGOCD_AUTH_TOKEN 未设时使用，preflight 脚本会用它们自动执行 `argocd login`。
+3. `~/.config/argocd/config` (the `argocd login` write target).
+4. Interactive `argocd login` (SSO / OIDC) — 仅当以上均无时触发。
 
 The generator's `00_preflight.sh` does the login once via
 `argocd login --auth-token $ARGOCD_AUTH_TOKEN --server $ARGOCD_SERVER`,
@@ -247,11 +250,13 @@ its core flow — if the user wants destructive ops, delegate to
 1. `command -v argocd` → 未找到则提示安装（参考
    `references/cli-installation.md`），并建议使用与 ArgoCD server
    兼容的版本。
-2. `ARGOCD_AUTH_TOKEN` 是否已设 → 未设则提示"sync / rollback /
-   delete 等写操作将无法执行"。
+2. 认证凭证检测（按优先级）：
+   - `ARGOCD_AUTH_TOKEN` 已设 → 直接使用；
+   - `ARGOCD_AUTH_TOKEN` 未设但 `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` 均已设 → 使用用户名密码登录；
+   - 均未设 → 提示"sync / rollback / delete 等写操作将无法执行"，并提示可配置 `.env.example` 中的任一方式。
 3. `ARGOCD_SERVER` 是否已设 → 未设则提示并要求用户提供
    （**不要让用户把 token 直接粘到对话里**，提示设置 env 即可）。
-4. 若三项均齐备，提示"环境就绪，可执行写操作"。
+4. 若认证凭证 + server 均齐备，提示"环境就绪，可执行写操作"。
 
 这套"LLM 端预检"与 `scripts/argocd_cli_gen/renderer.py` 顶部
 `SCRIPT_HEADER` 注释、`PREFLIGHT_SCRIPT` 中的 `00_preflight.sh`
@@ -272,6 +277,7 @@ LLM 端预检话术示例（agent 视角，不是给用户看的代码）：
 ```
 [preflight] 检测到 argocd CLI 已安装（v3.4.2）
 [preflight] ARGOCD_AUTH_TOKEN 已设（*** 屏蔽）
+        或：ARGOCD_USERNAME 已设（ARGOCD_AUTH_TOKEN 未配置）
 [preflight] ARGOCD_SERVER 已设（argocd.hd123.com）
 [ok] 会话就绪，可执行写操作
 ```
