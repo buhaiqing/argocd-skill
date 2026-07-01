@@ -469,6 +469,23 @@ argocd app get <name> -o json | jq '.status.sync.status'
 
 ## P1 智能诊断（聚合分析层）
 
+### 诊断工具集入口
+
+```bash
+# 一级入口
+python -m argocd_insight diagnose          # 问题 App 诊断
+python -m argocd_insight drift             # 版本漂移检测
+python -m argocd_insight health            # 稳定性评估
+python -m argocd_insight repo-health       # Git 源健康检查
+python -m argocd_insight compliance       # 配置合规检查
+
+# 或直接调用单个工具
+python -m argocd_deploy_stats.oos_analyzer  # OutOfSync 根因归因
+python -m argocd_deploy_stats.stats           # 部署频率统计
+```
+
+
+
 > 触发词：「所有 App 健康报告」「哪些 App 有问题」「部署频率」「谁部署最多」「最近部署了多少次」
 
 ### 部署频率统计工具

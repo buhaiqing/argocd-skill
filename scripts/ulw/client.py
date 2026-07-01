@@ -26,8 +26,8 @@ class ArgoCDClient:
     """Low-level ArgoCD API client."""
 
     server: str          # e.g. "https://argocd.hd123.com/dnet-int"
-    token: str | None   # bearer token (from login)
-    ssl_verify: bool
+    token: str | None = None  # bearer token (from login)
+    ssl_verify: bool = True
 
     BASE: str = "/api/v1"   # API base path appended to server
 
@@ -181,7 +181,8 @@ class ArgoCDClient:
     # ------------------------------------------------------------------
     def _url(self, path: str) -> str:
         """Join server + base + path, normalising slashes."""
-        return f"{self.server}{self.BASE}{path}"
+        server = self.server.rstrip("/")
+        return f"{server}{self.BASE}{path}"
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}

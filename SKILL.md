@@ -11,6 +11,10 @@ description: |
   (7) 诊断分析：批量识别有问题的 App（OutOfSync / Degraded / Error / Missing），多维度诊断（资源层 / diff 层 / 事件层 / 历史层），输出根因 + 严重级别（critical/high/medium/low）+ 具体 action 命令，调用内置工具 `python -m argocd_insight diagnose`；
   (8) 版本漂移检测：比对两个 ArgoCD 集群（或同一集群两个环境）同名 App 的 revision，输出漂移率、仅源端/目标端存在的 App，调用内置工具 `python -m argocd_insight drift`；
   (9) 运行稳定性评估：8 维度打分（App 健康率 / 同步率 / 错误率 / 部署频率 / 自动化覆盖率 / 聚合入口完整性 / 多源冗余度 / 漂移复发率），输出总分 + 薄弱项 + 具体改进建议，调用内置工具 `python -m argocd_insight health`。
+  (10) Git 源健康检查：检查 ArgoCD 所有仓库的连接状态（ArgoCD server 侧）、分支可达性，输出健康报告，调用内置工具 `python -m argocd_insight repo-health` 或 `python -m argocd_deploy_stats.stats`（部署频率统计）。
+  (11) 配置合规检查：检查 App syncPolicy 风险（automated 无 retry / 无 self-heal / 无 prune）、namespace 风险，输出风险数 + 严重级别 + 具体修复命令，调用内置工具 `python -m argocd_insight compliance`。
+  (12) 资源成本估算：查询 ArgoCD App 的部署资源（CPU/Memory requests），估算运行成本，输出成本概览 + Top 10 高成本 App，调用内置工具 `python -m argocd_insight cost`。
+  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析.
   Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, pod 查询, .env 加载, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
@@ -645,6 +649,148 @@ python -m argocd_cli_gen --input <dir> --output ./out --upsert --emit-dry-run
 python -m argocd_deploy_stats.oos_analyzer [--project <name>] [--days N] [--output json]
 ```
 然后向用户展示归因汇总表 + 每种原因的 App 列表。
+
+### 能力五：资源成本估算
+
+查询 ArgoCD App 的部署资源（CPU/Memory requests），估算运行成本。
+
+**调用方式：**
+```bash
+# 全量估算
+python -m argocd_insight cost
+
+# 按项目过滤
+python -m argocd_insight cost --project prod
+
+# JSON 输出
+python -m argocd_insight cost --output json
+```
+
+**输出示例（Markdown）：**
+```
+# ArgoCD 资源成本估算报告
+
+生成时间：2026-07-01T12:00:00+00:00
+成本模型：CPU $0.042/vCPU-hr，Memory $0.0047/GiB-hr
+
+## 总览
+
+| 指标 | 值 |
+|------|-----|
+| App 总数 | 50 |
+| CPU 总量 | 32.5 cores |
+| Memory 总量 | 64.2 GiB |
+| 副本总数 | 128 |
+| **每小时成本** | **$48.72** |
+| **预估月成本** | **$35,118.24** |
+
+## Top 10 高成本 App
+
+| 排名 | App | Project | CPU (cores) | Memory (GiB) | 副本 | 月成本 |
+|------|-----|---------|-------------|--------------|------|--------|
+| 1 | payment-service | prod | 8.0 | 16.0 | 12 | $2,880.00 |
+| 2 | order-service | prod | 4.0 | 8.0 | 8 | $1,440.00 |
+```
+
+**工具位置：** `scripts/argocd_insight/cost.py`
+**依赖：** 仅 argocd CLI（无 Python 第三方依赖）
+
+**触发短语：**
+- "帮我看看 ArgoCD 里部署的资源成本"
+- "估算一下 production 环境的运行成本"
+- "哪些 App 消耗资源最多？"
+- "给我一份资源成本报告"
+- "CPU 和 Memory 用了多少？"
+- "成本估算，按项目分组"
+- "哪个服务最烧钱？"
+
+**任一触发 → Agent 应直接调用：**
+```bash
+python -m argocd_insight cost [--project <name>] [--output json]
+```
+然后向用户展示成本概览 + Top 10 高成本 App 列表。
+
+### 能力六：多集群对比报告
+
+比对两个 ArgoCD 集群的 App 配置、资源、健康状态差异。
+
+**调用方式：**
+```bash
+# 全量对比
+python -m argocd_insight multi-cluster --from-server <server-a> --to-server <server-b>
+
+# 按项目过滤
+python -m argocd_insight multi-cluster --from-server <a> --to-server <b> --project prod
+
+# JSON 输出
+python -m argocd_insight multi-cluster --from-server <a> --to-server <b> --output json
+```
+
+**对比维度：**
+- App 存在性：只在 A / 只在 B / 两边都有
+- 版本漂移：revision 是否一致
+- 健康状态：Healthy / Degraded / Missing
+- 同步状态：Synced / OutOfSync
+- 资源配置：CPU/Memory requests 差异
+
+**触发短语：**
+- "对比一下 prod 和 staging 两个集群的 App"
+- "多集群对比，看看哪些 App 不一致"
+- "检查两个环境的配置差异"
+- "prod 和 staging 的资源差异"
+- "哪些 App 只在一个集群有？"
+
+**任一触发 → Agent 应直接调用：**
+```bash
+python -m argocd_insight multi-cluster --from-server <a> --to-server <b> [--project <name>] [--output json]
+```
+然后向用户展示对比概览 + 漂移/差异详情。
+
+### 能力七：报告推送（飞书 / 钉钉 / Slack）
+
+将诊断、成本、对比等报告推送到即时通讯渠道。
+
+**调用方式：**
+```bash
+# 管道输入（推荐）：将其他命令的输出直接推送
+python -m argocd_insight cost --output json | python -m argocd_insight report-push --webhook <url>
+
+# 文件输入
+python -m argocd_insight report-push --file report.md --webhook <url>
+
+# 指定渠道（自动检测）
+python -m argocd_insight report-push --file report.md --channel feishu --webhook <url>
+
+# 自定义标题
+python -m argocd_insight cost --output json | python -m argocd_insight report-push --webhook <url> --title "生产环境成本报告"
+```
+
+**注意事项：**
+- 不指定 `--channel` 时自动从 Webhook URL 检测渠道（feishu/dingtalk/slack）
+- 不指定 `--file` 时从 stdin 读入
+- 支持 Markdown / JSON 两种消息样式
+
+**触发短语：**
+- "把这个报告推送到飞书"
+- "把成本报告发到钉钉"
+- "推送诊断报告到 Slack"
+- "把对比报告结果通知给我"
+- "把报告通过管道发给 Webhook"
+- "推送报告，自动检测渠道"
+- "报告发到群机器人"
+- "帮我定时把成本报告推送到飞书"
+
+**任一触发 → Agent 应直接执行（推荐管道模式）：**
+```bash
+python -m argocd_insight cost --output json | python -m argocd_insight report-push --webhook <url>
+```
+或使用文件输入：
+```bash
+python -m argocd_insight report-push --file report.md --webhook <url>
+```
+
+**工具位置：** `scripts/argocd_insight/report_push.py`
+**依赖：** 仅 Python 标准库（urllib + json）
 
 ## 常见错误
 

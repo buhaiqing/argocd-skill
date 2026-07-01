@@ -87,14 +87,14 @@
 | 层级 | 已实现 | 待实现 |
 |------|--------|--------|
 | 执行层 | **App**：create/delete/sync/rollback/set/patch/delete-resource/refresh/unset/edit/terminate-op/logs/events/diff/history/wait/add-source/remove-source；**Project**：create/delete/edit/get/list/add-source/remove-source/add-dest/remove-dest/set；**ApplicationSet**：get/list/create/delete/generate；**Account**：get-user-info/generate-token/delete-token/list/update-password/can-i；**Repo/Cluster**：add/list/get/rm；**YAML→CLI/批量工具/健康报告** | — |
-| 诊断层 | **diagnose**：8 类问题诊断（OutOfSync/Degraded/Error/Missing），多维度归因，action 命令；**drift**：跨集群版本漂移检测；**health**：8 维度稳定性打分 + 改进建议 | Sync 历史统计 / 合规检查 / Git 源健康检查 |
-| 优化层 | — | 成本估算 / 多集群对比 / 报告推送 |
+| 诊断层 | **diagnose**：8 类问题诊断；**drift**：跨集群版本漂移检测；**health**：8 维度稳定性打分；**repo-health**：Git 源健康；**oos_analyzer**：OutOfSync 根因归因；**stats**：部署频率统计；**compliance**：配置合规检查；**cost**：资源成本估算；**multi-cluster**：多集群对比报告；**report-push**：报告推送 | — |
+| 优化层 | — | — |
 
 ### 缺口池（下一步优先级）
 
 | 缺口 | 来源 | 优先级 | 目标版本 |
 |------|------|--------|----------|
-| Sync 历史统计 | 用户需求 | P2 | v0.4.0 |
+| — | — | — | — |
 
 ### 范围定义
 
@@ -130,4 +130,7 @@ regression 回滚：`git revert <bad-commit> && git tag -d vX.Y.Z && git push or
 | 2026-07-01 下午 | v0.2.3 | SKILL.md 新增准则五（Ponytail 最小代码优先）；EVOLUTION.md 质量门更新；TODO.md 重建结构 |
 | 2026-07-01 | v0.3.0 | 诊断层 + 智能层正式发布：diagnose（8 类诊断+action）/ drift（跨集群版本比对）/ health（8 维度打分+改进建议）。143/143 测试通过。新增脚本：argocd_insight/{diagnose,drift,health}.py + cli.py；新增测试：test_diagnose.py (6) / test_drift.py (10) / test_health.py (11)。SKILL.md 能力(7)(8)(9)。|
 | 2026-07-01 | v0.2.4 | 范围定义 + 版本 SOP + 缺口池补充目标版本；回滚路径补全 |
-| 2026-07-01 | v0.3.0 | **P1-1 OutOfSync 根因归因交付**：oos_analyzer.py 代码加固（timeout/双格式diff/ponytail标记）+ 16例测试 + SKILL.md 集成（能力四+触发词+错误表） |
+| 2026-07-01 | v0.3.1 | P1-2 全量压测：argocd_deploy_stats.stats，566 App / 150s，1735 部署 |
+| 2026-07-01 | P2-4 | Git 源健康检查：repo_health.py，14 repos 实测，143/143 测试通过 |
+| 2026-07-01 | P2-1 | 配置合规检查：compliance.py，566 App 实测（547 有风险），143/143 测试通过 |
+| 2026-07-01 | P2-2~P2-5 | 运营优化层全量发布：cost（资源成本估算）/ multi-cluster（多集群对比报告）/ report-push（飞书/钉钉/Slack 报告推送）。新增模块：cost.py（159 测试）/ multi_cluster.py（172 测试）/ report_push.py（23 测试）。SKILL.md 提示词示例扩充。

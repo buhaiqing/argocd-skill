@@ -9,13 +9,13 @@ import os
 # 确保 argocd_insight 包内模块可导入
 sys.path.insert(0, os.path.dirname(__file__))
 
-from . import diagnose, drift, health
+from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="argocd-insight",
-        description="ArgoCD 洞察工具集：诊断、漂移检测、稳定性评估",
+        description="ArgoCD 洞察工具集：诊断、漂移检测、稳定性评估、Git 源健康、配置合规",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -43,6 +43,39 @@ def main() -> int:
     p_health.add_argument("--output", choices=["markdown", "json"], default="markdown")
     p_health.add_argument("--concurrency", type=int, default=8)
 
+    # compliance
+    p_comp = sub.add_parser("compliance", help="配置合规检查")
+    p_comp.add_argument("--severity", choices=["low", "medium", "high", "critical"], default="low")
+    p_comp.add_argument("--output", choices=["markdown", "json"], default="markdown")
+
+    # repo-health
+    p_repo = sub.add_parser("repo-health", help="Git 源健康检查")
+    p_repo.add_argument("--project")
+    p_repo.add_argument("--output", choices=["markdown", "json"], default="markdown")
+
+    # cost
+    p_cost = sub.add_parser("cost", help="资源成本估算")
+    p_cost.add_argument("--project", help="按项目过滤")
+    p_cost.add_argument("--output", choices=["markdown", "json"], default="markdown")
+
+    # multi-cluster
+    p_mc = sub.add_parser("multi-cluster", help="多集群对比报告")
+    p_mc.add_argument("--from", dest="from_label", default="源端")
+    p_mc.add_argument("--to", dest="to_label", default="目标端")
+    p_mc.add_argument("--from-server", dest="from_server")
+    p_mc.add_argument("--to-server", dest="to_server")
+    p_mc.add_argument("--project")
+    p_mc.add_argument("--output", choices=["markdown", "json"], default="markdown")
+    p_mc.add_argument("--concurrency", type=int, default=8)
+
+    # report-push
+    p_rp = sub.add_parser("report-push", help="推送报告到飞书/钉钉/Slack")
+    p_rp.add_argument("--file", "-f", help="报告文件路径")
+    p_rp.add_argument("--channel", choices=["feishu", "dingtalk", "slack"], help="通知渠道")
+    p_rp.add_argument("--webhook", required=True, help="Webhook URL")
+    p_rp.add_argument("--title", default="ArgoCD 报告", help="消息标题")
+    p_rp.add_argument("--style", choices=["markdown", "json"], default="markdown")
+
     args = parser.parse_args()
 
     if args.command == "diagnose":
@@ -68,6 +101,39 @@ def main() -> int:
             + ["--days", str(args.days)]
             + ["--output", args.output]
             + ["--concurrency", str(args.concurrency)]
+        )
+    elif args.command == "repo-health":
+        return repo_health.main([
+            "--project", args.project] if args.project else []
+            + ["--output", args.output]
+        )
+    elif args.command == "compliance":
+        return compliance.main([
+            "--severity", args.severity,
+            "--output", args.output,
+        ])
+    elif args.command == "cost":
+        return cost.main([
+            "--project", args.project] if args.project else []
+            + ["--output", args.output]
+        )
+    elif args.command == "multi-cluster":
+        return multi_cluster.main([
+            "--from", args.from_label,
+            "--to", args.to_label,
+            "--from-server", args.from_server] if args.from_server else []
+            + ["--to-server", args.to_server] if args.to_server else []
+            + ["--project", args.project] if args.project else []
+            + ["--output", args.output]
+            + ["--concurrency", str(args.concurrency)]
+        )
+    elif args.command == "report-push":
+        return report_push.main([
+            "--file", args.file] if args.file else []
+            + ["--channel", args.channel] if args.channel else []
+            + ["--webhook", args.webhook]
+            + ["--title", args.title]
+            + ["--style", args.style]
         )
     return 1
 

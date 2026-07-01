@@ -227,3 +227,4 @@ __marimo__/
 
 # argocd_cli_gen output (when run from repo root)
 /out/
+.codegraph
