@@ -80,6 +80,33 @@ def compute_delta(
     }
 
 
+def _discover_metrics(snapshots: list[dict[str, Any]]) -> list[str]:
+    """从快照数据自动发现所有数值型 metric paths。"""
+    paths: set[str] = set()
+
+    def _walk(data: Any, prefix: str) -> None:
+        if isinstance(data, dict):
+            for key, val in data.items():
+                full = f"{prefix}.{key}" if prefix else key
+                if isinstance(val, (int, float)):
+                    paths.add(full)
+                elif isinstance(val, dict):
+                    _walk(val, full)
+        elif isinstance(data, list) and data and isinstance(data[0], dict):
+            _walk(data[0], prefix)
+
+    for snap in snapshots:
+        modules = snap.get("modules", {})
+        if isinstance(modules, dict):
+            for mod_name, mod_data in modules.items():
+                if isinstance(mod_data, (int, float)):
+                    paths.add(mod_name)
+                elif isinstance(mod_data, dict):
+                    _walk(mod_data, mod_name)
+
+    return sorted(paths)
+
+
 def analyze_trend(
     store: SnapshotStore,
     days: int = 7,
@@ -113,8 +140,7 @@ def analyze_trend(
     }
 
     metrics_to_check = (
-        [metric] if metric else
-        ["health.score", "cost.total_cost", "compliance.risks"]
+        [metric] if metric else _discover_metrics(snapshots)
     )
 
     for m in metrics_to_check:

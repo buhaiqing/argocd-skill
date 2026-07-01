@@ -85,11 +85,6 @@ def _capture_json(module, argv: list[str]) -> dict | list | None:
         return None
 
 
-def _now_iso() -> str:
-    """当前 UTC 时间 ISO 格式（无毫秒）。"""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 # ---------------------------------------------------------------------------
 # Markdown 渲染
 # ---------------------------------------------------------------------------
@@ -196,7 +191,7 @@ def _compose_markdown(
     parts.append("")
 
     # 时间戳
-    parts.append(f"> 生成时间: {_now_iso()}")
+    parts.append(f"> 生成时间: {datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}")
     parts.append("")
 
     # 摘要表
@@ -219,7 +214,7 @@ def _compose_json(
     return {
         "report": {
             "title": f"ArgoCD 综合报告{f' — {project}' if project else ''}",
-            "generated_at": _now_iso(),
+            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "project": project,
         },
         "modules": {name: data for name, data in results.items()},

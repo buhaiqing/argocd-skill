@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import defaultdict
 from typing import Any
 
 
@@ -193,8 +194,6 @@ def compare_applications(
 
 def _auto_group(apps: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
     """Auto-group apps by source repoURL + path prefix."""
-    from collections import defaultdict
-
     groups: dict[str, list[str]] = defaultdict(list)
     for name, data in apps.items():
         spec = data.get("spec", {})

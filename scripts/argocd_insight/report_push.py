@@ -120,7 +120,6 @@ def push_report(
     title: str = "ArgoCD 报告",
     channel: str = "feishu",
     webhook_url: str = "",
-    style: str = "markdown",
 ) -> tuple[bool, str]:
     """推送报告到指定渠道
 
@@ -180,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Pushing report to {channel}...", file=sys.stderr)
     success, err = push_report(content, title=args.title, channel=channel,
-                                webhook_url=args.webhook, style=args.style)
+                                webhook_url=args.webhook)
     if success:
         print(f"✓ Report pushed to {channel} successfully", file=sys.stderr)
         return 0
