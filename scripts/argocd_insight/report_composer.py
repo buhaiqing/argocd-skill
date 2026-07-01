@@ -179,22 +179,18 @@ def _compose_markdown(
     """将多模块结果合成为完整 Markdown 报告。"""
     parts: list[str] = []
 
-    # 标题
     title = "ArgoCD 综合报告"
     if project:
         title += f" — {project}"
     parts.append(f"# {title}")
     parts.append("")
 
-    # 时间戳
     parts.append(f"> 生成时间: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}")
     parts.append("")
 
-    # 摘要表
     parts.append(_render_summary_table(results))
     parts.append("")
 
-    # 各模块详情
     for name, data in results.items():
         parts.append(_render_section(name, data))
         parts.append("")

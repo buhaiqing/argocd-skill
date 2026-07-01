@@ -86,10 +86,6 @@ def _detect_channel(webhook_url: str) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# 发送
-# ---------------------------------------------------------------------------
-
 def send_webhook(webhook_url: str, payload: dict, timeout: int = 15) -> tuple[int, str]:
     """发送 webhook 请求"""
     data = json.dumps(payload).encode("utf-8")
@@ -110,10 +106,6 @@ def send_webhook(webhook_url: str, payload: dict, timeout: int = 15) -> tuple[in
     except Exception as e:
         return -1, str(e)
 
-
-# ---------------------------------------------------------------------------
-# 主流程
-# ---------------------------------------------------------------------------
 
 def push_report(
     content: str,
