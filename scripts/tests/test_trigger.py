@@ -145,7 +145,6 @@ def test_cron_cli_help():
     result = subprocess.run(
         ["python3", "-m", "argocd_insight.trigger.cron", "--help"],
         capture_output=True, text=True,
-        cwd="/Users/bohaiqing/opensource/git/argocd-skill/scripts",
     )
     assert result.returncode == 0
     assert "--since" in result.stdout
@@ -255,7 +254,6 @@ def test_threshold_cli_help():
     result = subprocess.run(
         ["python3", "-m", "argocd_insight.trigger.threshold", "--help"],
         capture_output=True, text=True,
-        cwd="/Users/bohaiqing/opensource/git/argocd-skill/scripts",
     )
     assert result.returncode == 0
 
@@ -366,8 +364,9 @@ def test_session_end_handler_no_sessions_silent(tmp_path, monkeypatch, capsys):
     assert captured.out == ""
 
 
-def test_session_end_handler_exception_ponytail(monkeypatch, capsys):
+def test_session_end_handler_exception_ponytail(tmp_path, monkeypatch, capsys):
     """run_pipeline 抛异常时 handler 不抛出，打印 error 到 stderr。"""
+    monkeypatch.setenv("ARGOCD_SKILL_RUNTIME_DIR", str(tmp_path))
     from argocd_insight.trigger import session_end
 
     def boom(*args, **kwargs):
@@ -390,3 +389,142 @@ def test_session_end_install_idempotent(monkeypatch):
     h1 = install_session_end_hook()
     h2 = install_session_end_hook()
     assert h1 is h2
+
+
+# ---------- Task 5: 补充测试 — 边界 & 分支覆盖 ----------
+
+def test_count_events_empty_trace_file(tmp_path):
+    """空 trace 文件不计入事件。"""
+    sess = tmp_path / "sessions" / "s_empty"
+    sess.mkdir(parents=True)
+    # 创建空文件
+    (sess / "trace_001.jsonl").write_text("")
+    # 有换行但没有非空行
+    (sess / "trace_002.jsonl").write_text("\n\n\n")
+
+    assert count_events(tmp_path) == 0
+
+
+def test_count_events_mixed_empty_and_valid(tmp_path):
+    """空文件与有效事件混合时只计有效事件。"""
+    sess = tmp_path / "sessions" / "s_mixed"
+    sess.mkdir(parents=True)
+    (sess / "trace_001.jsonl").write_text("")
+    (sess / "trace_002.jsonl").write_text(
+        '{"event_id":"e_001","type":"cli_call"}\n'
+    )
+
+    assert count_events(tmp_path) == 1
+
+
+def test_count_events_multiple_trace_files(tmp_path):
+    """多个 trace 文件的事件汇总计数。"""
+    from argocd_insight.trace.writer import TraceWriter
+
+    sess = tmp_path / "sessions" / "s_multi_file"
+    w1 = TraceWriter(sess)
+    w1.write_event({"event_id": "e_001"})
+    w1.close()
+
+    # 模拟第二个 trace 文件：直接写一个新的 jsonl 文件
+    (sess / "trace_b.jsonl").write_text(
+        '{"event_id":"e_002","type":"cli_call"}\n'
+        '{"event_id":"e_003","type":"cli_call"}\n'
+    )
+
+    assert count_events(tmp_path) == 3
+
+
+def test_run_pipeline_empty_sessions_dir(tmp_path):
+    """sessions/ 目录存在但为空时优雅处理。"""
+    (tmp_path / "sessions").mkdir(parents=True)
+    results = run_pipeline(tmp_path, since_days=7)
+    assert results["sessions_analyzed"] == 0
+    assert results["total_events"] == 0
+
+
+def test_run_pipeline_evolve_no_insights(tmp_path, monkeypatch):
+    """evolve=True 但无 insight 时 evolve_results 为空 dict 而非 skipped 结构。"""
+    monkeypatch.setenv("ARGOCD_SKILL_RUNTIME_DIR", str(tmp_path))
+
+    from argocd_insight.trace.writer import TraceWriter
+    sess = tmp_path / "sessions" / "s_no_insight"
+    writer = TraceWriter(sess)
+    writer.write_event({
+        "event_id": "e_001", "type": "cli_call",
+        "command": "argocd app list", "duration_ms": 100,
+        "return_code": 0, "module": "diagnose",
+    })
+    writer.close()
+
+    results = run_pipeline(tmp_path, since_days=7, extract=False, evolve=True, dry_run=True)
+    assert results["sessions_analyzed"] >= 1
+    assert results["evolve_results"] == {}
+
+
+def test_run_pipeline_multiple_sessions(tmp_path, monkeypatch):
+    """多个会话分别分析并汇总。"""
+    monkeypatch.setenv("ARGOCD_SKILL_RUNTIME_DIR", str(tmp_path))
+
+    from argocd_insight.trace.writer import TraceWriter
+
+    for name in ("s_alpha", "s_beta"):
+        sess = tmp_path / "sessions" / name
+        writer = TraceWriter(sess)
+        writer.write_event({
+            "event_id": "e_001", "type": "cli_call",
+            "duration_ms": 100, "return_code": 0, "module": "diagnose",
+        })
+        writer.close()
+
+    results = run_pipeline(tmp_path, since_days=7, extract=True, evolve=False, dry_run=True)
+    assert results["sessions_analyzed"] == 2
+    assert results["total_events"] == 2
+
+
+def test_threshold_triggers_and_runs_pipeline(tmp_path, monkeypatch, capsys):
+    """threshold 达阈值且不传 --dry-run 时实际执行 run_pipeline 并打印分析结果。"""
+    monkeypatch.setenv("ARGOCD_SKILL_RUNTIME_DIR", str(tmp_path))
+
+    from argocd_insight.trace.writer import TraceWriter
+    sess = tmp_path / "sessions" / "s_thr_full"
+    writer = TraceWriter(sess)
+    for i in range(4):
+        writer.write_event({
+            "event_id": f"e_{i:04d}", "type": "cli_call",
+            "duration_ms": 150, "return_code": 0, "module": "diagnose",
+        })
+    writer.write_event({
+        "event_id": "e_slow", "type": "cli_call",
+        "duration_ms": 5000, "return_code": 0, "module": "diagnose",
+    })
+    writer.close()
+
+    from argocd_insight.trigger.threshold import main as thr_main
+    exit_code = thr_main(["--threshold", "3", "--evolve", "--no-dry-run"])
+    assert exit_code == 0
+
+    out = capsys.readouterr().out
+    assert "Sessions analyzed: 1" in out
+    # --evolve 产生 insight，应有 Insights 行
+    assert "Insights:" in out
+
+
+def test_cron_main_via_subprocess():
+    """cron 模块的 __main__ 守卫可通过 subprocess 调用（覆盖 line 103）。"""
+    import subprocess
+    result = subprocess.run(
+        ["python3", "-m", "argocd_insight.trigger.cron", "--help"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+
+
+def test_threshold_main_via_subprocess():
+    """threshold 模块的 __main__ 守卫可通过 subprocess 调用（覆盖 line 99）。"""
+    import subprocess
+    result = subprocess.run(
+        ["python3", "-m", "argocd_insight.trigger.threshold", "--help"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0

@@ -90,18 +90,16 @@ def run_pipeline(
 
     do_extract = extract or evolve
     all_insights: list[Any] = []
-    total_events = 0
 
     for session_dir in sessions:
         report = analyze_session(session_dir)
-        total_events += report.get("total_events", 0)
         if do_extract:
             insights = extract_insights(report)
             all_insights.extend(insights)
 
     result: dict[str, Any] = {
         "sessions_analyzed": len(sessions),
-        "total_events": total_events,
+        "total_events": count_events(trace_dir),
         "insights": all_insights if do_extract else [],
     }
 

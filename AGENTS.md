@@ -24,40 +24,41 @@ ArgoCD tutorial.
 
 ## Current state
 
-The repository is **v0.2.0 (2026-06-04) — first-commit-clean, but
-still under active development**. The on-disk state is:
+The repository is **v0.4.2+ (2026-07-02) — actively developed**.
+The on-disk state is:
 
 ```
 argocd-skill/
-├── SKILL.md                  381 lines, name=argocd-skill, bilingual
-├── references/               5 docs (~62 KB total)
+├── SKILL.md                  entry point, bilingual, frontmatter trigger
+├── references/               15 docs
 │   ├── cli-installation.md
-│   ├── cli-commands.md       217 lines (v0.2.0 增强：+102 行)
+│   ├── cli-commands.md
 │   ├── kustomize-mapping.md
 │   ├── kustomize-examples.md
-│   └── batch-conversion-design.md
-├── scripts/                  Python tool `argocd_cli_gen` + pytest tests
-│   ├── argocd_cli_gen/       8-file Python package
-│   ├── tests/                5 test files
+│   ├── batch-conversion-design.md
+│   ├── testing-guide.md
+│   ├── performance-guide.md
+│   ├── agent-protocols.md
+│   ├── argocd-app-lifecycle.md
+│   ├── argocd-appproject-guide.md
+│   ├── argocd-sync-policy-deep-dive.md
+│   ├── argocd-appset-guide.md
+│   ├── argocd-troubleshooting.md
+│   ├── argocd-insight-commands.md
+│   └── argocd-prompts.md
+├── scripts/                  Python tools + pytest tests (32 test files)
+│   ├── argocd_cli_gen/       YAML→CLI batch converter
+│   ├── argocd_api/           HTTP API CLI (bypasses argocd CLI bugs)
+│   ├── argocd_insight/       insight suite (diagnose/drift/health/cost/...)
+│   ├── argocd_deploy_stats/  deployment stats + OOS analyzer
+│   ├── ulw/                  ArgoCD ultra-workload via HTTP API
+│   ├── tests/                32 test files
 │   ├── requirements.txt      PyYAML>=6.0, pytest>=7.0
-│   └── README.md             full tool usage manual
+│   └── README.md             tool usage manual
 ├── LICENSE                   MIT, 2026, buhaiqing
 ├── README.md                 repo overview
-└── AGENTS.md                 366 lines, this file
+└── AGENTS.md                 this file
 ```
-
-**Repo state:** Three commits on `main`. `31775e0` is the initial
-LICENSE + generic-Python `.gitignore` commit. `2866fbe`
-(`feat(argocd-skill): 添加 ArgoCD CLI 技能及批量转换工具`) brings
-in the on-disk skill: `SKILL.md`, `references/` (5 docs), and
-`scripts/` (`argocd_cli_gen` package, tests, requirements, and its
-own `.gitignore`). The v0.2.0 commit (`docs(argocd-skill): 能力二
-向导化升级`) upgrades **Capability 2 only**: `SKILL.md` 能力二
-重写为 5 子协议 (2.1~2.5)；`references/cli-commands.md` 追加
-参数推断规则 / 复合意图编排 / 危险命令清单 / 开机自检四章；
-`AGENTS.md` 新增会话内状态复用规则 + 能力二开机环境检查协议。
-**Python 工具 8 个 .py md5 与 v0.1.0 完全一致，未被牵连**；
-`scripts/tests/` 66/66 测试通过 (0.64s)。
 
 The root `.gitignore` is the generic Python template. Each subdir
 with Python scratch state (`scripts/`, and any future `tests/`)
@@ -81,9 +82,9 @@ The layout mirrors the user's other skill collections
 ## Skill layout (current)
 
 ```
-argocd-skill/                  # the skill lives at the repo root (only one skill exists)
-├── SKILL.md                   # entry point — frontmatter + 概述 + 何时使用 + 能力清单 + 常见错误
-├── references/                # how-to depth; do not duplicate into SKILL.md
+argocd-skill/
+├── SKILL.md                   entry point — frontmatter + 概述 + 何时使用 + 能力清单 + 常见错误
+├── references/                15 docs — how-to depth; do not duplicate into SKILL.md
 │   ├── cli-installation.md    # argocd CLI binary install (Linux/macOS/Windows/Docker, version handling, offline)
 │   ├── cli-commands.md        # 20+ CLI commands, argocd.py method→CLI mapping
 │   ├── kustomize-mapping.md   # 字段→flag 映射表 (namePrefix, images, commonLabels, patches, components, …)
@@ -96,20 +97,33 @@ argocd-skill/                  # the skill lives at the repo root (only one skil
 │   ├── argocd-appproject-guide.md    # AppProject 管理 runbook
 │   ├── argocd-sync-policy-deep-dive.md  # syncPolicy 深度解析
 │   ├── argocd-appset-guide.md        # ApplicationSet runbook
-│   └── argocd-troubleshooting.md     # 故障排查（按症状分流）
-└── scripts/                   # the argocd_cli_gen batch tool + tests
-    ├── argocd_cli_gen/        # python -m argocd_cli_gen
-    │   ├── __init__.py
-    │   ├── __main__.py
-    │   ├── cli.py             # argparse 与编排
-    │   ├── parser.py          # YAML 加载 + 4-tier 层级判定
-    │   ├── mapper.py          # 字段→flag 映射表 (与 kustomize-mapping.md 同源)
-    │   ├── renderer.py        # shell 脚本模板渲染
-    │   ├── fallback.py        # 多源 / 不支持字段收集
-    │   └── report.py          # JSON / MD 报告生成
-    ├── tests/                 # pytest 套件 (5 test_*.py + fixtures/)
-    ├── requirements.txt
-    └── README.md              # 工具使用手册（输出结构、CLI 参数、退出码、模块结构）
+│   ├── argocd-troubleshooting.md     # 故障排查（按症状分流）
+│   ├── argocd-insight-commands.md    # insight 子命令参考
+│   └── argocd-prompts.md             # 提示词示例
+├── scripts/                   Python tools + pytest tests (32 test files)
+│   ├── argocd_cli_gen/        # python -m argocd_cli_gen (YAML→CLI batch converter)
+│   │   ├── __init__.py
+│   │   ├── __main__.py
+│   │   ├── cli.py             # argparse 与编排
+│   │   ├── parser.py          # YAML 加载 + 4-tier 层级判定
+│   │   ├── mapper.py          # 字段→flag 映射表 (与 kustomize-mapping.md 同源)
+│   │   ├── renderer.py        # shell 脚本模板渲染
+│   │   ├── fallback.py        # 多源 / 不支持字段收集
+│   │   └── report.py          # JSON / MD 报告生成
+│   ├── argocd_api/            # python -m argocd_api (HTTP API CLI, bypasses argocd CLI bugs)
+│   ├── argocd_insight/        # python -m argocd_insight (diagnose/drift/health/cost/...)
+│   │   ├── trace/             # 轨迹记录 (session/writer/@traced)
+│   │   ├── analyzer/          # 统计聚合 + 瓶颈识别 + 错误归因
+│   │   ├── insight_engine/    # 经验提取 + 推断链生成
+│   │   ├── evolver/           # 风险分级 + 写回执行器
+│   │   ├── skillopt/          # SDK 适配 + 意图识别 + 参数推荐
+│   │   ├── trigger/           # 离线触发 (cron/threshold/session_end)
+│   │   └── *.py               # diagnose/drift/health/cost/batch/autofix/...
+│   ├── argocd_deploy_stats/   # python -m argocd_deploy_stats (部署统计 + OOS 分析)
+│   ├── ulw/                   # python -m ulw (ArgoCD ultra-workload via HTTP API)
+│   ├── tests/                 # 32 test files
+│   ├── requirements.txt       # PyYAML>=6.0, pytest>=7.0
+│   └── README.md              # 工具使用手册（输出结构、CLI 参数、退出码、模块结构）
 ```
 
 **Top-level vs nested**: The skill lives at the repo root because the
@@ -395,7 +409,7 @@ also run these argocd-specific checks:
    `scripts/argocd_cli_gen/parser.py`'s classifier constants (or
    the test fixtures in `scripts/tests/fixtures/`).
 
-Report `[OK] argocd-skill v0.2.0 — N rounds clean` when round N
+Report `[OK] argocd-skill v0.4.2 — N rounds clean` when round N
 finds no new issues.
 
 ## Cross-skill delegation (provisional)
