@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .client import ArgoCDClient
 from .commands import delete_pod, find_pod
+from argocd_insight.trace.decorator import traced
 
 
 def _env_file(s: str) -> Path:
@@ -42,6 +43,42 @@ def _build_delete_parser(sub: argparse.ArgumentParser) -> None:
         default=Path(__file__).parents[2] / ".env",
         help="Path to .env file (default: <ulw>/../../.env)",
     )
+
+
+@traced(module="ulw", operation="find_pod", interface="cli")
+def _do_find_pod(client: ArgoCDClient, pod_name: str) -> int:
+    """Find which ArgoCD App manages a Pod."""
+    loc = find_pod(client, pod_name)
+    if loc:
+        print(f"APP_NAME={loc.app_name}")
+        print(f"NAMESPACE={loc.namespace}")
+        print(f"KIND={loc.kind}")
+        print(f"GROUP={loc.group}")
+        print(f"VERSION={loc.version}")
+        return 0
+    return 1
+
+
+@traced(module="ulw", operation="delete_pod", interface="cli")
+def _do_delete_pod(client: ArgoCDClient, pod_name: str) -> int:
+    """Delete a Pod via its managing ArgoCD App."""
+    loc = find_pod(client, pod_name)
+    if not loc:
+        print(f"[ulw] cannot delete: pod not found", file=sys.stderr)
+        return 1
+
+    # Safety: require explicit confirmation for delete-pod
+    confirm = input(
+        f"[ulw] delete Pod {pod_name} via App {loc.app_name}? "
+        "Type 'yes': ",
+    )
+    if confirm.strip().lower() != "yes":
+        print("[ulw] aborted", file=sys.stderr)
+        return 1
+
+    result = delete_pod(client, loc)
+    print(result)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,33 +118,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.command == "find-pod":
-        loc = find_pod(client, args.pod_name)
-        if loc:
-            print(f"APP_NAME={loc.app_name}")
-            print(f"NAMESPACE={loc.namespace}")
-            print(f"KIND={loc.kind}")
-            print(f"GROUP={loc.group}")
-            print(f"VERSION={loc.version}")
-            return 0
-        return 1
-
+        return _do_find_pod(client, args.pod_name)
     elif args.command == "delete-pod":
-        loc = find_pod(client, args.pod_name)
-        if not loc:
-            print(f"[ulw] cannot delete: pod not found", file=sys.stderr)
-            return 1
-
-        # Safety: require explicit confirmation for delete-pod
-        confirm = input(
-            f"[ulw] delete Pod {args.pod_name} via App {loc.app_name}? "
-            "Type 'yes': ",
-        )
-        if confirm.strip().lower() != "yes":
-            print("[ulw] aborted", file=sys.stderr)
-            return 1
-
-        result = delete_pod(client, loc)
-        print(result)
-        return 0
+        return _do_delete_pod(client, args.pod_name)
 
     return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

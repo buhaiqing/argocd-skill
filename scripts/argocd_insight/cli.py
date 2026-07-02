@@ -8,8 +8,10 @@ import sys
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
 from . import trend, config_compare, predict, autofix, impact, batch, scaffold
 from .snapshot_store import SnapshotStore
+from .trace.decorator import traced
 
 
+@traced(module="insight", operation="diagnose", interface="cli")
 def _handle_diagnose(args: argparse.Namespace) -> int:
     argv: list[str] = ["--output", args.output, "--concurrency", str(args.concurrency)]
     if args.project:
@@ -19,6 +21,7 @@ def _handle_diagnose(args: argparse.Namespace) -> int:
     return diagnose.main(argv)
 
 
+@traced(module="insight", operation="drift", interface="cli")
 def _handle_drift(args: argparse.Namespace) -> int:
     argv: list[str] = [
         "--from", args.from_label, "--to", args.to_label,
@@ -33,6 +36,7 @@ def _handle_drift(args: argparse.Namespace) -> int:
     return drift.main(argv)
 
 
+@traced(module="insight", operation="health", interface="cli")
 def _handle_health(args: argparse.Namespace) -> int:
     argv: list[str] = [
         "--days", str(args.days),
@@ -43,6 +47,7 @@ def _handle_health(args: argparse.Namespace) -> int:
     return health.main(argv)
 
 
+@traced(module="insight", operation="repo_health", interface="cli")
 def _handle_repo_health(args: argparse.Namespace) -> int:
     argv: list[str] = ["--output", args.output]
     if args.project:
@@ -50,10 +55,12 @@ def _handle_repo_health(args: argparse.Namespace) -> int:
     return repo_health.main(argv)
 
 
+@traced(module="insight", operation="compliance", interface="cli")
 def _handle_compliance(args: argparse.Namespace) -> int:
     return compliance.main(["--severity", args.severity, "--output", args.output])
 
 
+@traced(module="insight", operation="cost", interface="cli")
 def _handle_cost(args: argparse.Namespace) -> int:
     argv: list[str] = ["--output", args.output]
     if args.project:
@@ -61,6 +68,7 @@ def _handle_cost(args: argparse.Namespace) -> int:
     return cost.main(argv)
 
 
+@traced(module="insight", operation="multi_cluster", interface="cli")
 def _handle_multi_cluster(args: argparse.Namespace) -> int:
     argv: list[str] = [
         "--from", args.from_label, "--to", args.to_label,
@@ -75,6 +83,7 @@ def _handle_multi_cluster(args: argparse.Namespace) -> int:
     return multi_cluster.main(argv)
 
 
+@traced(module="insight", operation="report_push", interface="cli")
 def _handle_report_push(args: argparse.Namespace) -> int:
     argv: list[str] = ["--webhook", args.webhook, "--title", args.title]
     if args.file:
@@ -84,6 +93,7 @@ def _handle_report_push(args: argparse.Namespace) -> int:
     return report_push.main(argv)
 
 
+@traced(module="insight", operation="report_compose", interface="cli")
 def _handle_report_compose(args: argparse.Namespace) -> int:
     argv: list[str] = ["--include", args.include, "--output", args.output, "--title", args.title]
     if args.project:
@@ -97,6 +107,7 @@ def _handle_report_compose(args: argparse.Namespace) -> int:
     return report_composer.main(argv)
 
 
+@traced(module="insight", operation="snapshot", interface="cli")
 def _handle_snapshot(args: argparse.Namespace) -> int:
     includes = [s.strip() for s in args.include.split(",") if s.strip()]
     results: dict = {}
@@ -115,6 +126,7 @@ def _handle_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="insight", operation="trend", interface="cli")
 def _handle_trend(args: argparse.Namespace) -> int:
     return trend.main([
         "--days", str(args.days),
@@ -124,6 +136,7 @@ def _handle_trend(args: argparse.Namespace) -> int:
     ])
 
 
+@traced(module="insight", operation="config_compare", interface="cli")
 def _handle_config_compare(args: argparse.Namespace) -> int:
     argv: list[str] = args.files + ["--format", args.format]
     if args.group:
@@ -132,6 +145,7 @@ def _handle_config_compare(args: argparse.Namespace) -> int:
     return config_compare.main(argv)
 
 
+@traced(module="insight", operation="predict", interface="cli")
 def _handle_predict(args: argparse.Namespace) -> int:
     argv: list[str] = args.files + ["--format", args.format, "--type", args.type]
     if args.budget is not None:
@@ -139,6 +153,7 @@ def _handle_predict(args: argparse.Namespace) -> int:
     return predict.main(argv)
 
 
+@traced(module="insight", operation="autofix", interface="cli")
 def _handle_autofix(args: argparse.Namespace) -> int:
     argv: list[str] = [args.diagnosis, "--output", args.output]
     if args.dry_run:
@@ -148,6 +163,7 @@ def _handle_autofix(args: argparse.Namespace) -> int:
     return autofix.main(argv)
 
 
+@traced(module="insight", operation="impact", interface="cli")
 def _handle_impact(args: argparse.Namespace) -> int:
     argv: list[str] = [args.app, args.operation, "--output", args.output]
     if args.history_id is not None:
@@ -155,6 +171,7 @@ def _handle_impact(args: argparse.Namespace) -> int:
     return impact.main(argv)
 
 
+@traced(module="insight", operation="batch", interface="cli")
 def _handle_batch(args: argparse.Namespace) -> int:
     argv: list[str] = [args.operation, "--output", args.output]
     if args.project:
@@ -174,6 +191,7 @@ def _handle_batch(args: argparse.Namespace) -> int:
     return batch.main(argv)
 
 
+@traced(module="insight", operation="scaffold", interface="cli")
 def _handle_scaffold(args: argparse.Namespace) -> int:
     """Forward remaining CLI args to scaffold's own argparse."""
     import sys
@@ -184,6 +202,7 @@ def _handle_scaffold(args: argparse.Namespace) -> int:
         return scaffold.main([])
 
 
+@traced(module="insight", operation="trace", interface="cli")
 def _handle_trace(args: argparse.Namespace) -> int:
     """分析轨迹与提炼经验。"""
     from .analyzer import analyze_session

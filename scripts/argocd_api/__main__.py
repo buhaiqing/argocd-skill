@@ -31,6 +31,7 @@ import sys
 from pathlib import Path
 
 from .client import ArgoCDClient
+from argocd_insight.trace.decorator import traced
 
 
 # ------------------------------------------------------------------
@@ -85,6 +86,7 @@ def _print_dict(d: dict, indent: str = "") -> None:
 # Subcommands
 # ------------------------------------------------------------------
 
+@traced(module="api", operation="list", interface="api")
 def cmd_list(client: ArgoCDClient, args: argparse.Namespace) -> int:
     apps = client.list_applications(project=args.project)
     if not apps:
@@ -109,12 +111,14 @@ def cmd_list(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="get", interface="api")
 def cmd_get(client: ArgoCDClient, args: argparse.Namespace) -> int:
     app = client.get_application(args.app)
     _pprint(app, args.json)
     return 0
 
 
+@traced(module="api", operation="resource_tree", interface="api")
 def cmd_resource_tree(client: ArgoCDClient, args: argparse.Namespace) -> int:
     tree = client.get_application_resource_tree(args.app)
     if args.json:
@@ -154,6 +158,7 @@ def cmd_resource_tree(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="resource", interface="api")
 def cmd_resource(client: ArgoCDClient, args: argparse.Namespace) -> int:
     ns = args.ns or input("Namespace: ").strip()
     if not ns:
@@ -171,6 +176,7 @@ def cmd_resource(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="find_pod", interface="api")
 def cmd_find_pod(client: ArgoCDClient, args: argparse.Namespace) -> int:
     node = client.find_pod(args.pod_name)
     if not node:
@@ -195,6 +201,7 @@ def cmd_find_pod(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="delete_resource", interface="api")
 def cmd_delete_resource(client: ArgoCDClient, args: argparse.Namespace) -> int:
     ns = args.ns or input("Namespace: ").strip()
     if not ns:
@@ -221,6 +228,7 @@ def cmd_delete_resource(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="login", interface="api")
 def cmd_login(client: ArgoCDClient, args: argparse.Namespace) -> int:
     # Client already authenticated via from_env
     # Test by listing apps
@@ -235,12 +243,14 @@ def cmd_login(client: ArgoCDClient, args: argparse.Namespace) -> int:
         return 1
 
 
+@traced(module="api", operation="sync", interface="api")
 def cmd_sync(client: ArgoCDClient, args: argparse.Namespace) -> int:
     result = client.sync_application(args.app, revision=args.revision)
     _pprint(result, args.json)
     return 0
 
 
+@traced(module="api", operation="refresh", interface="api")
 def cmd_refresh(client: ArgoCDClient, args: argparse.Namespace) -> int:
     app = client.refresh_application(args.app)
     sync_status = app.get("status", {}).get("sync", {}).get("status", "?")
@@ -249,6 +259,7 @@ def cmd_refresh(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="manifests", interface="api")
 def cmd_manifests(client: ArgoCDClient, args: argparse.Namespace) -> int:
     manifests = client.get_application_manifests(args.app)
     if args.json:
@@ -261,6 +272,7 @@ def cmd_manifests(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="create", interface="api")
 def cmd_create(client: ArgoCDClient, args: argparse.Namespace) -> int:
     import json as _json
     if args.file:
@@ -272,6 +284,7 @@ def cmd_create(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="delete", interface="api")
 def cmd_delete(client: ArgoCDClient, args: argparse.Namespace) -> int:
     confirm = input(f"[argocd-api] delete application '{args.app}'? Type 'yes': ")
     if confirm.strip().lower() != "yes":
@@ -282,24 +295,28 @@ def cmd_delete(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="rollback", interface="api")
 def cmd_rollback(client: ArgoCDClient, args: argparse.Namespace) -> int:
     result = client.rollback_application(args.app, args.id)
     _pprint(result, args.json)
     return 0
 
 
+@traced(module="api", operation="terminate_op", interface="api")
 def cmd_terminate_op(client: ArgoCDClient, args: argparse.Namespace) -> int:
     result = client.terminate_operation(args.app)
     _pprint(result, args.json)
     return 0
 
 
+@traced(module="api", operation="whoami", interface="api")
 def cmd_whoami(client: ArgoCDClient, args: argparse.Namespace) -> int:
     info = client.get_account_info()
     _pprint(info, args.json)
     return 0
 
 
+@traced(module="api", operation="projects", interface="api")
 def cmd_projects(client: ArgoCDClient, args: argparse.Namespace) -> int:
     projs = client.list_projects()
     if not projs:
@@ -319,12 +336,14 @@ def cmd_projects(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="project", interface="api")
 def cmd_project(client: ArgoCDClient, args: argparse.Namespace) -> int:
     proj = client.get_project(args.name)
     _pprint(proj, args.json)
     return 0
 
 
+@traced(module="api", operation="clusters", interface="api")
 def cmd_clusters(client: ArgoCDClient, args: argparse.Namespace) -> int:
     clusters = client.list_clusters()
     if not clusters:
@@ -343,6 +362,7 @@ def cmd_clusters(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="repos", interface="api")
 def cmd_repos(client: ArgoCDClient, args: argparse.Namespace) -> int:
     repos = client.list_repositories()
     if not repos:
