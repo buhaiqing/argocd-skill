@@ -184,6 +184,40 @@ def _handle_scaffold(args: argparse.Namespace) -> int:
         return scaffold.main([])
 
 
+def _handle_trace(args: argparse.Namespace) -> int:
+    """分析轨迹与提炼经验。"""
+    from .analyzer import analyze_session
+    from .insight_engine import extract_insights
+    from .evolver import evolve
+    from .trace.decorator import get_trace_dir
+    from pathlib import Path
+
+    session_dir = Path(args.session) if args.session else (get_trace_dir() / "sessions")
+    if not session_dir.exists():
+        print(f"Session not found: {session_dir}", file=sys.stderr)
+        return 1
+
+    print(f"Analyzing session: {session_dir.name}")
+    report = analyze_session(session_dir)
+    print(f"Total events: {report['total_events']}")
+
+    if args.extract_insights:
+        insights = extract_insights(report)
+        print(f"Insights extracted: {len(insights)}")
+        for i in insights:
+            print(f"  - [{i.category}] {i.insight} (conf={i.confidence})")
+            for step in i.reasoning_chain:
+                print(f"      {step}")
+
+    if args.evolve:
+        insights = extract_insights(report)
+        results = evolve(insights, dry_run=not args.no_dry_run)
+        print(f"Evolve results: low={len(results['low'])}, "
+              f"medium={len(results['medium'])}, skipped={len(results['skipped'])}")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="argocd-insight",
@@ -317,6 +351,13 @@ def main() -> int:
 
     p_scaffold = sub.add_parser("scaffold", help="生成 ArgoCD Application 配置模板（4-tier）")
     p_scaffold.set_defaults(func=_handle_scaffold)
+
+    p_trace = sub.add_parser("trace", help="分析轨迹与提炼经验")
+    p_trace.add_argument("--session", help="会话目录路径")
+    p_trace.add_argument("--extract-insights", action="store_true", help="提炼经验")
+    p_trace.add_argument("--evolve", action="store_true", help="执行自进化")
+    p_trace.add_argument("--no-dry-run", action="store_true", help="实际写回（默认 dry-run）")
+    p_trace.set_defaults(func=_handle_trace)
 
     args = parser.parse_args()
     return args.func(args)
