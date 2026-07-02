@@ -61,23 +61,19 @@ class SkillOptAdapter:
         )
 
     def _fallback_recognize(self, text: str) -> RecognizedIntent:
+        from .intent import INTENT_MAP
+
         text_lower = text.lower()
-        if "不同步" in text or "outsync" in text_lower:
-            return RecognizedIntent(intent="diagnose", confidence=0.8, params={"severity": "OutOfSync"})
-        if "健康" in text or "health" in text_lower:
-            return RecognizedIntent(intent="health", confidence=0.8, params={})
-        if "漂移" in text or "drift" in text_lower:
-            return RecognizedIntent(intent="drift", confidence=0.8, params={})
+        for intent, keywords in INTENT_MAP.items():
+            if any(kw in text_lower for kw in keywords):
+                return RecognizedIntent(intent=intent, confidence=0.8, params={})
         return RecognizedIntent(intent="unknown", confidence=0.0, params={})
 
     def _fallback_recommend(self, module: str, history: dict) -> RecommendedParams:
-        defaults = {
-            "diagnose": {"concurrency": 8, "timeout": 60},
-            "health": {"concurrency": 8, "timeout": 120},
-            "batch": {"concurrency": 5, "timeout": 120},
-        }
+        from .recommend import PARAM_DEFAULTS
+
         return RecommendedParams(
             module=module,
-            params=defaults.get(module, {}),
+            params=PARAM_DEFAULTS.get(module, {}).copy(),
             reasoning="基于历史轨迹统计的默认参数",
         )

@@ -210,3 +210,50 @@ auth 优先级自动处理（shell env > `~/.config/argocd/config` > `.env` user
 → python -m argocd_api sync my-app
 ✅ 同步成功：my-app → Synced / Healthy
 ```
+
+---
+
+## 三、Insight 工具 subprocess 调用注意事项
+
+`argocd_insight` 系列工具（health / compliance / diagnose / snapshot / trend / compare / predict）在被 Agent 通过 subprocess 调用时，有以下行为需要特别注意：
+
+### stderr 进度输出
+
+- 进度信息（如 `[health] 正在检查...`）输出到 **stderr**
+- JSON 结果输出到 **stdout**
+- 进度信息中可能包含 `[argocd-api] using token...` 字样
+
+### subprocess 调用推荐方式
+
+```python
+import subprocess, json
+
+# ✅ 推荐：shell=True + 2>/dev/null + 管道读取
+result = subprocess.run(
+    f"python3 -m argocd_insight health --json 2>/dev/null",
+    shell=True, capture_output=True, text=True, timeout=120,
+    cwd=scripts_dir,
+)
+data = json.loads(result.stdout)
+
+# ✅ 备选：Python subprocess.PIPE（可能因缓冲导致 JSON 解析失败）
+# result = subprocess.run(
+#     ["python3", "-m", "argocd_insight", "health", "--json"],
+#     capture_output=True, text=True, timeout=120, cwd=scripts_dir,
+# )
+# data = json.loads(result.stdout)
+```
+
+### 已知限制
+
+| 工具 | 需要离线文件 | 说明 |
+|------|-------------|------|
+| health | 否 | 实时查询 ArgoCD API |
+| compliance | 否 | 实时查询 |
+| diagnose | 否 | 实时查询 |
+| snapshot | 否 | 生成快照文件 |
+| trend | 否 | 基于快照计算趋势 |
+| compare | 否 | 对比两个快照 |
+| predict | **是** | 需要离线 JSON 文件作为输入，不同设计于 live-query 工具 |
+
+`predict` 工具需要离线 JSON 文件输入——这是设计差异，不是 bug。

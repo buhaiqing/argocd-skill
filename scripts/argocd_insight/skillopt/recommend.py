@@ -25,10 +25,20 @@ class ParameterRecommender:
             return adapter.recommend(module, history)
 
         params = PARAM_DEFAULTS.get(module, {}).copy()
+        reasoning_parts = [f"基于 {module} 模块历史轨迹统计 + 默认参数"]
         if history.get("total_calls", 0) > 100:
             params["concurrency"] = min(params.get("concurrency", 8) + 2, 16)
+            reasoning_parts.append("高负载场景并发+2")
+        error_rate = history.get("error_rate", 0.0)
+        if error_rate > 0.3:
+            params["concurrency"] = max(params.get("concurrency", 8) - 4, 2)
+            params["timeout"] = int(params.get("timeout", 60) * 1.5)
+            reasoning_parts.append(f"错误率{error_rate:.0%}过高，并发-4、超时+50%")
+        elif error_rate > 0.1:
+            params["concurrency"] = max(params.get("concurrency", 8) - 2, 2)
+            reasoning_parts.append(f"错误率{error_rate:.0%}偏高，并发-2")
         return RecommendedParams(
             module=module,
             params=params,
-            reasoning=f"基于 {module} 模块历史轨迹统计 + 默认参数",
+            reasoning="；".join(reasoning_parts),
         )

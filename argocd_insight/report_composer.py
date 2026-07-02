@@ -1,0 +1,1 @@
+../scripts/argocd_insight/report_composer.py

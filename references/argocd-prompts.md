@@ -23,25 +23,25 @@
 
 ## 运维 Runbooks（深度操作指南）
 
-**生命周期：** 见 [references/argocd-app-lifecycle.md](references/argocd-app-lifecycle.md)
+**生命周期：** 见 [argocd-app-lifecycle.md](argocd-app-lifecycle.md)
 - "App 从创建到删除完整流程怎么走"
 - "创建并同步一个 App 的标准步骤"
 - "回滚并验证 health 的命令组合"
 
-**AppProject：** 见 [references/argocd-appproject-guide.md](references/argocd-appproject-guide.md)
+**AppProject：** 见 [argocd-appproject-guide.md](argocd-appproject-guide.md)
 - "怎么新建一个 AppProject 并限制仓库和 namespace"
 - "repository not permitted 怎么修"
 
-**syncPolicy：** 见 [references/argocd-sync-policy-deep-dive.md](references/argocd-sync-policy-deep-dive.md)
+**syncPolicy：** 见 [argocd-sync-policy-deep-dive.md](argocd-sync-policy-deep-dive.md)
 - "Root 入口要不要开 automated 和 self-heal"
 - "业务 App 的 syncPolicy 生产规范是什么"
 - "PruneLast 和 auto-prune 有什么区别"
 
-**ApplicationSet：** 见 [references/argocd-appset-guide.md](references/argocd-appset-guide.md)
+**ApplicationSet：** 见 [argocd-appset-guide.md](argocd-appset-guide.md)
 - "用 ApplicationSet 批量生成多环境 App"
 - "appset generate 预览会创建哪些 Application"
 
-**故障排查：** 见 [references/argocd-troubleshooting.md](references/argocd-troubleshooting.md)
+**故障排查：** 见 [argocd-troubleshooting.md](argocd-troubleshooting.md)
 - "App OutOfSync 怎么排查"
 - "argocd login 失败怎么办"
 - "sync 一直卡住怎么终止"

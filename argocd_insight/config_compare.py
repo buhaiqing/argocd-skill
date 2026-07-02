@@ -1,0 +1,1 @@
+../scripts/argocd_insight/config_compare.py

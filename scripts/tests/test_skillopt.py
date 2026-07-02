@@ -10,15 +10,152 @@ def test_intent_classifier():
     assert intent.confidence > 0.5
 
 
+def test_intent_empty_input():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("")
+    assert intent.intent == "unknown"
+    assert intent.confidence == 0.0
+
+
+def test_intent_noise_input():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("asdfghjkl12345!@#$%")
+    assert intent.intent == "unknown"
+    assert intent.confidence == 0.0
+
+
+def test_intent_mixed_language():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("帮我 check 一下 health score")
+    assert intent.intent == "health"
+    assert intent.confidence > 0.5
+
+
+def test_intent_specific_before_generic():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("帮我修复问题")
+    assert intent.intent == "autofix"
+
+
+def test_intent_composite_diagnose_then_fix():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("诊断然后修复这个问题")
+    assert intent.intent == "autofix"
+
+
+def test_intent_cost_analysis():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("帮我做一个成本分析")
+    assert intent.intent == "cost"
+
+
+def test_intent_batch_concurrent():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("并发批量处理")
+    assert intent.intent == "batch"
+
+
+def test_intent_scaffold_create():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("帮我生成一个创建脚本")
+    assert intent.intent == "scaffold"
+
+
+def test_intent_diagnose():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("诊断这个 app 的问题")
+    assert intent.intent == "diagnose"
+
+
+def test_intent_health():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("评估一下健康情况")
+    assert intent.intent == "health"
+
+
+def test_intent_drift():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("检查版本漂移")
+    assert intent.intent == "drift"
+
+
+def test_intent_compliance():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("合规检查")
+    assert intent.intent == "compliance"
+
+
+def test_intent_cost():
+    classifier = IntentClassifier()
+    intent = classifier.recognize("费用统计")
+    assert intent.intent == "cost"
+
+
 def test_parameter_recommender():
     recommender = ParameterRecommender()
     params = recommender.recommend("diagnose", {"total_calls": 10, "error_rate": 0.1})
     assert "concurrency" in params.params
 
 
+def test_parameter_recommender_high_load():
+    recommender = ParameterRecommender()
+    params = recommender.recommend("diagnose", {"total_calls": 200})
+    assert params.params["concurrency"] == 10
+
+
+def test_parameter_recommender_high_load_cap():
+    recommender = ParameterRecommender()
+    params = recommender.recommend("health", {"total_calls": 500})
+    assert params.params["concurrency"] == 10
+
+
+def test_parameter_recommender_unknown_module():
+    recommender = ParameterRecommender()
+    params = recommender.recommend("nonexistent_module", {"total_calls": 5})
+    assert params.params == {}
+    assert params.module == "nonexistent_module"
+
+
+def test_parameter_recommender_error_rate_moderate():
+    recommender = ParameterRecommender()
+    params = recommender.recommend("diagnose", {"total_calls": 10, "error_rate": 0.15})
+    assert params.params["concurrency"] == 6
+    assert params.params["timeout"] == 60
+    assert "错误率" in params.reasoning
+
+
+def test_parameter_recommender_error_rate_high():
+    recommender = ParameterRecommender()
+    params = recommender.recommend("diagnose", {"total_calls": 10, "error_rate": 0.35})
+    assert params.params["concurrency"] == 4
+    assert params.params["timeout"] == 90
+    assert "错误率" in params.reasoning
+
+
+def test_parameter_recommender_error_rate_low():
+    recommender = ParameterRecommender()
+    params = recommender.recommend("diagnose", {"total_calls": 10, "error_rate": 0.05})
+    assert params.params["concurrency"] == 8
+    assert params.params["timeout"] == 60
+    assert "错误率" not in params.reasoning
+
+
+def test_parameter_recommender_high_load_and_error_rate():
+    recommender = ParameterRecommender()
+    params = recommender.recommend("diagnose", {"total_calls": 200, "error_rate": 0.35})
+    assert params.params["concurrency"] == 6
+    assert params.params["timeout"] == 90
+
+
+def test_parameter_recommender_reasoning():
+    recommender = ParameterRecommender()
+    params = recommender.recommend("batch", {})
+    assert "batch" in params.reasoning
+
+
 def test_adapter_fallback():
     adapter = SkillOptAdapter()
-    assert not adapter.is_available()  # 无 SDK 时返回 False
+    assert not adapter.is_available()
     intent = adapter.recognize("看看健康情况")
     assert intent.confidence > 0
 

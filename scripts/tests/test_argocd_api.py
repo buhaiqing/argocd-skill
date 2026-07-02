@@ -297,3 +297,29 @@ def test_list_repositories_returns_items():
     client = ArgoCDClient(server="https://x.com", token="x")
     client._get = MagicMock(return_value=MagicMock(json=lambda: {"items": []}))
     assert client.list_repositories() == []
+
+
+def test_get_application_manifests_multi_document():
+    client = ArgoCDClient(server="https://x.com", token="x")
+    doc1 = '{"apiVersion":"v1","kind":"Service","metadata":{"name":"svc1"}}'
+    doc2 = '{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"dep1"}}'
+    client._get = MagicMock(return_value=MagicMock(json=lambda: {"manifests": [doc1, doc2]}))
+    result = client.get_application_manifests("my-app")
+    assert len(result) == 2
+    assert result[0]["kind"] == "Service"
+    assert result[1]["kind"] == "Deployment"
+
+
+def test_get_application_manifests_empty():
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client._get = MagicMock(return_value=MagicMock(json=lambda: {"manifests": []}))
+    result = client.get_application_manifests("my-app")
+    assert result == []
+
+
+def test_get_application_manifests_invalid_json_in_list():
+    client = ArgoCDClient(server="https://x.com", token="x")
+    good = '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"cm1"}}'
+    client._get = MagicMock(return_value=MagicMock(json=lambda: {"manifests": [good, "not-valid-json"]}))
+    with pytest.raises(Exception):
+        client.get_application_manifests("my-app")

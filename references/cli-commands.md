@@ -47,7 +47,7 @@ argocd app get APPNAME                                  # 详情
 argocd app list [-l LABEL_SELECTOR]                     # 列表
 argocd app history APPNAME                              # 历史
 argocd app diff APPNAME                                 # 差异对比（干跑）
-argocd app manifests APPNAME [--revision REV]           # Manifest
+argocd app manifests APPNAME [--revision REV]           # Manifest（输出多文档 JSON，以 --- 分隔，非单个 JSON 数组）
 argocd app resources APPNAME                            # 资源树（kind/name/namespace/健康态）
 argocd app get-resource APPNAME --kind Pod              # Pod 运行时详情（phase/IP/node/containerStatuses）
 argocd app logs APPNAME [--follow] [--tail N]          # Pod 日志
@@ -409,7 +409,7 @@ argocd account can-i sync applications '*'              # 权限检查
 | `check_application_is_healthy()` | `argocd app wait <app> --health --timeout N` |
 | `refresh_application()` | `argocd app refresh <name>` |
 | `get_applications(project)` | `argocd app list -l project=<project>` |
-| `get_application_manifests()` | `argocd app manifests <name>` |
+| `get_application_manifests()` | `argocd app manifests <name>`（多文档 JSON，`---` 分隔） |
 | `get_application_resource_tree()` | `argocd app get <name> -o json`（资源树在 status 中） |
 | `get_application_events()` | `kubectl get events -n argocd --field-selector involvedObject.name=<app>` |
 

@@ -1,0 +1,1 @@
+../scripts/argocd_cli_gen/renderer.py

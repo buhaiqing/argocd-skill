@@ -91,6 +91,40 @@ def test_pct_change_property(first, last):
         assert result["pct_change"] == pytest.approx((last - first) / first * 100)
 ```
 
+## Explorer Testing 五轮法
+
+单元测试验证"代码是否按设计工作"，Explorer Testing 验证"用户用自然语言驱动时，端到端流程是否跑通"。适用于集成测试、端到端验收、新功能上线前。
+
+### 五轮流程
+
+| 轮次 | 目标 | 方法 | 验证标准 |
+|------|------|------|----------|
+| R1 意图识别 | 自然语言 → intent → params | 用真实用户措辞测试 IntentClassifier | 意图正确、置信度 > 0.5 |
+| R2 API 实时查询 | 认证 / CRUD 全链路 | subprocess 调用 argocd_api，只读操作 | exit code 0、JSON 可解析 |
+| R3 诊断工具 | health / compliance / diagnose | 调用 insight 子命令，验证实时数据 | 返回具体数值（非空、非 error） |
+| R4 端到端管线 | Snapshot → Trend → Compare → Report | 串联多个工具完成完整工作流 | 每步输出作为下一步输入，最终产出报告 |
+| R5 边界条件 | 空输入 / 噪声 / 降级 / 错误处理 | 故意传入异常参数 | 优雅降级，不 crash |
+
+### 执行要点
+
+- **R1 用中文自然语言**，不要用英文关键词测试（目标用户是中文运维）
+- **R2 只用只读操作**，不用 `sync` / `delete` / `create` 等变更操作
+- **R3 的 `predict` 工具需要离线 JSON 文件**，不同设计于其他 live-query 工具——这是预期行为
+- **R4 每步输出需 JSON 可解析**，否则管线中断
+- **R5 空输入必须返回结构化错误**，不能返回 None 或抛异常
+
+### 与单元测试的关系
+
+```
+单元测试 (pytest)          Explorer Testing
+  ↓ 红绿重构                  ↓ 五轮法
+  ↓ mock 隔离                 ↓ 真实 API / subprocess
+  ↓ 验证代码逻辑               ↓ 验证用户流程
+  ↓ 快速反馈 (< 10s)          ↓ 深度验证 (1-2 min)
+```
+
+两者互补，不可替代。
+
 ## 性能回归保护
 
 测试套件的执行时间本身也是质量指标：

@@ -2,15 +2,18 @@
 from __future__ import annotations
 from .adapter import RecognizedIntent
 
+# ⚠️ 设计约束：dict 遍历顺序 = 优先级顺序。
+# 具体意图（autofix/batch/scaffold）必须放在泛化意图（diagnose）之前，
+# 否则 "帮我修复问题" 会匹配 diagnose 而非 autofix。
 INTENT_MAP = {
-    "diagnose": ["不同步", "outsync", "问题", "诊断", "分析", "app 问题"],
+    "autofix": ["修复", "fix", "自动修复"],
+    "batch": ["批量", "batch", "并发"],
+    "scaffold": ["生成", "scaffold", "模板", "创建"],
+    "diagnose": ["不同步", "outsync", "问题", "诊断", "app 问题"],
     "health": ["健康", "health", "稳定性", "评估"],
     "drift": ["漂移", "drift", "版本", "revision"],
     "compliance": ["合规", "compliance", "配置风险"],
     "cost": ["成本", "cost", "费用", "资源"],
-    "autofix": ["修复", "fix", "自动修复"],
-    "batch": ["批量", "batch", "并发"],
-    "scaffold": ["生成", "scaffold", "模板", "创建"],
 }
 
 

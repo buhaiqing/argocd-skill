@@ -16,10 +16,10 @@ CLI 入口：``python -m argocd_insight.trigger.threshold``
 - 0 = 已触发分析（达阈值）
 - 1 = 未触发（事件数未达阈值）
 """
+
 from __future__ import annotations
 
 import argparse
-import sys
 from typing import Sequence
 
 from .base import count_events, get_trace_dir, run_pipeline

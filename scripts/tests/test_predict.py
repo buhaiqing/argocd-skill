@@ -208,6 +208,10 @@ class TestMain:
         ret = main([str(bad_file)])
         assert ret == 1
 
+    def test_missing_file(self, tmp_path):
+        ret = main([str(tmp_path / "nonexistent.json")])
+        assert ret == 1
+
     def test_no_files(self):
         with pytest.raises(SystemExit) as exc_info:
             main([])

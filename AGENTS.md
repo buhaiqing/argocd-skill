@@ -360,7 +360,7 @@ also run these argocd-specific checks:
    If a new prompt example is added but not the trigger, the agent
    will not match it.
 5. Verify all `references/` cross-links resolve (each
-   `[text](file.md)` points to a file that exists on disk).
+   `[text](references/cli-commands.md)` points to a file that exists on disk).
 6. Verify `references/kustomize-mapping.md` stays in sync with
    `scripts/argocd_cli_gen/mapper.py` — both encode the same
    field→flag rules; they are the single source of truth split
@@ -419,8 +419,11 @@ When a second `argocd-*-ops` skill lands (e.g. `argocd-notification-ops`,
   `scripts/requirements.txt`.  Note: repo root now has
   `__init__.py` (namespace package marker) and tool directories
   (`argocd_api/`, `argocd_cli_gen/`, `argocd_insight/`,
-  `argocd_deploy_stats/`) for `python -m <tool>` compatibility;
-  these are package infrastructure, not code to maintain.
+  `argocd_deploy_stats/`) and wrapper scripts (`argocd_deploy_stats.py`)
+  for `python -m <tool>` compatibility;
+  **each tool package's `__init__.py` and `__main__.py` MUST be real files**
+  (not symlinks), otherwise `python3 -m <tool>` fails with
+  "Cannot use package as __main__".
 - ❌ CI / pre-commit config — no build, no lint, no CI by design.
   Tests are local-only via `pytest scripts/tests/`.
 - ❌ A `tests/` mirror at the repo root — tests are colocated with

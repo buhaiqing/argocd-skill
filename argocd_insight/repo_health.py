@@ -1,0 +1,1 @@
+../scripts/argocd_insight/repo_health.py
