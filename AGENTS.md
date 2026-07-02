@@ -267,6 +267,50 @@ its core flow — if the user wants destructive ops, delegate to
 - **能力二开机环境检查**：会话开头预检 → 认证凭证检测 → CLI/API 回退
 - **CLI 运行时回退协议**：CLI 失败 → 自动回退 `python -m argocd_api` → 3 条铁律
 
+### 【IMPORTANT】多任务开发协作模式 — 编码 + 评审双 Agent
+
+> 本节为**强制规则**，适用于仓库内任何被拆分为多任务的开发工作（如
+> P3.5 离线触发、批量优化等）。用户已明确要求按此模式执行，不可省略。
+
+**核心规则：每个 task 启动 2 个 subagent，配对协作直到无问题才能结束。**
+
+| 角色 | 模型 | 职责 |
+|------|------|------|
+| 编码 Agent | `default` | TDD 实现：先写测试看失败 → 最小实现看通过 → 全量回归 |
+| 评审 Agent | `reasoning`（**必须与编码 Agent 模型不同**） | 代码评审：风格 / 安全 / 边界 / 测试覆盖 / 与既有模块一致性 |
+
+**协作流程（循环到评审无问题）：**
+
+```
+1. 编码 Agent 完成功能实现 + 自测全绿
+2. 编码 Agent → SendMessage(评审 Agent)：附文件路径 + 测试结果
+3. 评审 Agent 读取代码 + 测试，反馈问题清单（分类：阻塞 / 建议）
+   - 若无问题 → SendMessage(编码 Agent)：approved，结束
+   - 若有问题 → SendMessage(编码 Agent)：问题清单
+4. 编码 Agent 修复所有阻塞项 + 接受的建议项
+5. 编码 Agent → SendMessage(评审 Agent)：已修复，请复核
+6. 回到 Step 3，直到评审 Agent 返回 approved
+```
+
+**关键约束：**
+
+- **模型必须不同**：编码用 `default`，评审用 `reasoning`。同模型评审
+  等于自我背书，违反本规则即作废。
+- **评审 Agent 只读不写**：不直接修改代码，仅反馈问题清单。修复
+  由编码 Agent 执行，保证责任单一。
+- **循环上限**：最多 3 轮。第 3 轮仍有阻塞项时，编码 Agent 必须向
+  主会话（team-lead）上报冲突点，由用户裁决，不得自行放行。
+- **结束条件**：评审 Agent 明确回复 `approved` 且无阻塞项。仅"测试
+  通过"不等于可结束——评审必须签字。
+- **独立任务并行**：彼此无依赖的 task 可并行启动多对 agent；有依赖
+  的 task 必须等依赖项的 agent 对结束并 merge 后再启动。
+- **TDD 不可绕过**：编码 Agent 仍须遵守 Red-Green-Refactor，先看
+  测试失败再实现。评审 Agent 应检查测试是否真实验证了行为（不是
+  mock 自验）。
+
+**适用范围：** 任何被 TaskCreate 拆分为多 task 的开发工作。单 task
+一次性修复（< 30 行改动）可豁免，由主会话直接评审。
+
 ## App-of-Apps 4-tier production model
 
 Encoded in both `SKILL.md` (Markdown table) and

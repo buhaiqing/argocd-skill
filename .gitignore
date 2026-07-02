@@ -221,6 +221,7 @@ __marimo__/
 .DS_Store/
 .omc/
 .omo/
+.claude/
 .trae/
 .pi/
 .codebuddy/

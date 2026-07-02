@@ -1159,12 +1159,70 @@ python -m argocd_insight impact <app> <sync|rollback> [history_id] [--output jso
 然后向用户展示操作影响分析：当前状态 → 受影响资源 → 依赖关系 → 风险评估 → 操作建议。
 
 ### 可观测与自进化
-- "分析这次运行的轨迹"
-- "看看有哪些性能瓶颈"
-- "经验沉淀，把分析结果写回"
+
+**A. 轨迹记录（在线流程）**
+> 用户操作时自动触发，无需显式提示词。装饰器 `@traced` 自动拦截所有 CLI/API 调用。
+
+**B. 离线分析（手动触发）**
+> 以下提示词触发离线流程，对历史轨迹进行分析/经验提炼/自进化。
+
+**调用方式：**
+```bash
+# 分析指定会话
+python -m argocd_insight trace --session <session_id>
+
+# 分析最近 7 天所有会话
+python -m argocd_insight trace --session <session_id> --extract-insights
+
+# 分析 + 经验提炼 + 自进化写回（dry-run）
+python -m argocd_insight trace --session <session_id> --extract-insights --evolve
+
+# 实际执行写回（不加 --no-dry-run 时默认 dry-run）
+python -m argocd_insight trace --session <session_id> --extract-insights --evolve --no-dry-run
+```
+
+**触发短语：**
+- "分析一下这次会话的轨迹"
+- "看看这次运行有什么性能瓶颈"
+- "帮我看看执行效率怎么样"
+- "输出轨迹报告，JSON 格式"
+- "分析所有最近的会话轨迹"
+- "跑一下离线分析流程"
+
+**C. 经验提炼**
+- "提炼这次会话的经验"
+- "从轨迹里总结一些规律"
+- "哪些参数设置有问题？"
+- "这次诊断的参数有没有优化空间？"
+- "帮我看看并发度设置合不合理"
+- "生成经验报告"
+
+**D. 自进化写回**
+- "把分析结果写回 SKILL.md"
+- "经验沉淀，更新一下参数建议"
+- "把这次学到的东西记下来"
+- "自进化，把新发现写回配置"
+- "置信度够的话自动更新 tool 参数"
+- "这次分析要写入文档吗？"
+
+**E. SkillOpt 参数推荐**
 - "SkillOpt 推荐一下这次用什么参数"
-- "检查执行效率"
-- "轨迹报告，输出 JSON"
+- "基于历史轨迹，suggest 一个并发数"
+- "帮我推断最优的 timeout 设置"
+- "这次诊断用什么参数组合最好？"
+
+**任一触发 → Agent 应直接调用：**
+```bash
+# 基本分析
+python -m argocd_insight trace --session <session_id>
+
+# 分析 + 提炼经验（离线流程）
+python -m argocd_insight trace --session <session_id> --extract-insights
+
+# 完整流程：分析 + 提炼 + 自进化（dry-run）
+python -m argocd_insight trace --session <session_id> --extract-insights --evolve
+```
+然后向用户展示分析报告（事件数/耗时分布/瓶颈列表）+ 经验列表 + 写回状态。
 
 ## 常见错误
 
