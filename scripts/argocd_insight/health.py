@@ -461,11 +461,13 @@ def _calc_total(dimensions: list[DimensionScore]) -> tuple[int, str]:
 def build_report(
     apps: list[dict],
     project_filter: str | None,
+    app_filter: str | None = None,
     concurrency: int = 8,
 ) -> HealthReport:
     filtered = [
         a for a in apps
-        if not project_filter or a.get("spec", {}).get("project") == project_filter
+        if (not project_filter or a.get("spec", {}).get("project") == project_filter)
+        and (not app_filter or a.get("metadata", {}).get("name") == app_filter)
     ]
 
     print(f"[health] 评估 {len(filtered)} apps（总 {len(apps)} apps）...", file=sys.stderr)
@@ -585,6 +587,7 @@ def build_argparser() -> argparse.ArgumentParser:
         description="ArgoCD 运行稳定性评估：多维度打分 + 薄弱项分析 + 改进建议",
     )
     p.add_argument("--project", help="只评估指定项目的 App")
+    p.add_argument("--app", help="只评估指定名称的 App")
     p.add_argument("--days", type=int, default=30,
                    help="部署频率统计天数（默认 30）")
     p.add_argument("--output", choices=["markdown", "json"], default="markdown")
@@ -600,7 +603,7 @@ def main(argv: list[str] | None = None) -> int:
     apps = _fetch_apps()
 
     t0 = time.time()
-    report = build_report(apps, args.project, args.concurrency)
+    report = build_report(apps, args.project, args.app, args.concurrency)
     print(f"Done in {time.time()-t0:.1f}s", file=sys.stderr)
 
     if args.output == "json":

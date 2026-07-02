@@ -17,23 +17,25 @@ from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 
 
-def run(cmd: list[str]) -> str:
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        return ""
-    return r.stdout
+def run(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
+    """Run a CLI command with timeout. Returns (rc, stdout, stderr)."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout, r.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "", f"Timed out after {timeout}s"
+    except FileNotFoundError:
+        return -2, "", f"Command not found: {cmd[0]}"
 
 
 def fetch_apps() -> list[dict]:
-    out = run(["argocd", "app", "list", "--output", "json"])
-    if not out:
-        return []
-    return json.loads(out)
+    rc, out, _ = run(["argocd", "app", "list", "--output", "json"])
+    return json.loads(out) if rc == 0 and out else []
 
 
 def fetch_history(app_name: str) -> tuple[str, list[dict]]:
-    out = run(["argocd", "app", "get", app_name, "--output", "json"])
-    if not out:
+    rc, out, _ = run(["argocd", "app", "get", app_name, "--output", "json"])
+    if rc != 0 or not out:
         return app_name, []
     try:
         d = json.loads(out)
@@ -42,15 +44,17 @@ def fetch_history(app_name: str) -> tuple[str, list[dict]]:
         return app_name, []
 
 
-def build_report(apps: list[dict], days: int | None, project_filter: str | None, concurrency: int = 20) -> dict:
+def build_report(apps: list[dict], days: int | None, project_filter: str | None,
+                 app_filter: str | None = None, concurrency: int = 20) -> dict:
     cutoff = None
     if days is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
-    # 1. 按 project 过滤 apps
+    # 1. 按 project / app 过滤
     filtered_apps = [
         a for a in apps
-        if not project_filter or a.get("spec", {}).get("project") == project_filter
+        if (not project_filter or a.get("spec", {}).get("project") == project_filter)
+        and (not app_filter or a.get("metadata", {}).get("name") == app_filter)
     ]
 
     # 2. 并发拉 history
@@ -154,6 +158,7 @@ def main():
     p = argparse.ArgumentParser(description="ArgoCD 部署频率统计")
     p.add_argument("--days", type=int, default=None, help="只统计最近 N 天")
     p.add_argument("--project", type=str, default=None, help="只统计指定项目")
+    p.add_argument("--app", type=str, default=None, help="只统计指定 App 名称")
     p.add_argument("--output", choices=["markdown", "json"], default="markdown")
     p.add_argument("--concurrency", type=int, default=8, help="并发数（默认 8，过高会触发 ArgoCD server 限流）")
     p.add_argument("--limit", type=int, default=None, help="最多统计 N 个 App（默认全部）")
@@ -165,7 +170,7 @@ def main():
         apps = apps[:args.limit]
     print(f"Got {len(apps)} apps, fetching histories (concurrency={args.concurrency})...", file=__import__("sys").stderr)
     t0 = time.time()
-    report = build_report(apps, args.days, args.project, args.concurrency)
+    report = build_report(apps, args.days, args.project, args.app, args.concurrency)
     print(f"Done in {time.time()-t0:.1f}s", file=__import__("sys").stderr)
 
     if args.output == "json":

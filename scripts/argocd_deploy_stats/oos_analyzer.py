@@ -6,17 +6,18 @@ Usage:
   python -m argocd_deploy_stats.oos_analyzer               # 全量分析
   python -m argocd_deploy_stats.oos_analyzer --days 7     # 只看近 7 天 OOS 的
   python -m argocd_deploy_stats.oos_analyzer --project default
+  python -m argocd_deploy_stats.oos_analyzer --app my-app # 只分析单个 App
   python -m argocd_deploy_stats.oos_analyzer --output json
 """
 import argparse
 import json
-import re
 import subprocess
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from collections import defaultdict
+
+from argocd_insight.parse_utils import parse_diff, has_orphaned_entries
 
 
 def run(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
@@ -24,7 +25,7 @@ def run(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         return r.returncode, r.stdout, r.stderr
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
         return -1, "", f"Timed out after {timeout}s"
     except FileNotFoundError:
         return -2, "", f"Command not found: {cmd[0]}"
@@ -42,30 +43,14 @@ def classify_app(app_name: str) -> dict:
     #   若吞吐不够，将 classify_app 拆为两步并发（先批量 resources，再批量 diff）。
     # 1. 拿 resources（含 orphaned 列）
     _, res_out, _ = run(["argocd", "app", "resources", app_name])
-    orphaned = []
-    for line in res_out.strip().splitlines():
-        # ponytail: Orphaned 列检测基于列尾 "Yes"，格式依赖 ArgoCD 版本。
-        #   若版本升级后失效，改为解析 res 的 JSON 输出取 orphaned 字段。
-        if "\tOrphaned" in line or line.strip().endswith("Yes"):
-            parts = line.split()
-            if parts and parts[-1] == "Yes":
-                name = parts[-2] if len(parts) >= 2 else parts[0]
-                kind = parts[-3] if len(parts) >= 3 else "?"
-                orphaned.append({"kind": kind, "name": name})
+    orphaned = has_orphaned_entries(res_out)
 
     # 2. diff 看具体差异
     diff_rc, diff_out, _ = run(["argocd", "app", "diff", app_name])
 
-    has_additions = False
-    has_deletions = False
-    # ponytail: 逐行扫描 diff，不做结构化 diff 解析。
-    #   统一 diff 格式用 `+`/`-` 前缀，普通 diff 用 `>`/`<` 前缀。
-    #   同时匹配两种格式以避免 ArgoCD 版本差异。
-    for line in diff_out.splitlines():
-        if line.startswith("> ") or (line.startswith("+") and not line.startswith("+++")):
-            has_additions = True
-        elif line.startswith("< ") or (line.startswith("-") and not line.startswith("---")):
-            has_deletions = True
+    diff_info = parse_diff(diff_out)
+    has_additions = diff_info["additions"]
+    has_deletions = diff_info["deletions"]
 
     cause = None
     if has_additions and not has_deletions:
@@ -82,21 +67,19 @@ def classify_app(app_name: str) -> dict:
         "cause": cause,
         "hasAdditions": has_additions,
         "hasDeletions": has_deletions,
-        "orphaned": [f"{o['kind']}/{o['name']}" for o in orphaned[:5]],
+        "orphaned": orphaned[:5],
         "diffRc": diff_rc,
     }
 
 
-def build_report(apps: list[dict], days: int | None, project_filter: str | None, concurrency: int = 4) -> dict:
-    cutoff = None
-    if days is not None:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-
-    # 过滤 OOS apps
+def build_report(apps: list[dict], days: int | None, project_filter: str | None,
+                 app_filter: str | None = None, concurrency: int = 4) -> dict:
+    # 过滤 OOS apps（支持单 app 模式）
     oos_apps = [
         a for a in apps
         if a.get("status", {}).get("sync", {}).get("status") == "OutOfSync"
         and (not project_filter or a.get("spec", {}).get("project") == project_filter)
+        and (not app_filter or a.get("metadata", {}).get("name") == app_filter)
     ]
 
     print(f"Found {len(oos_apps)} OOS apps, analyzing...", file=sys.stderr)
@@ -130,7 +113,7 @@ def build_report(apps: list[dict], days: int | None, project_filter: str | None,
 
 
 def print_markdown(report: dict):
-    print(f"# ArgoCD OutOfSync 根因分析\n")
+    print("# ArgoCD OutOfSync 根因分析\n")
     print(f"生成时间：{report['generatedAt']}")
     print(f"总 App 数：{report['totalApps']}，OutOfSync：{report['oosCount']}\n")
 
@@ -161,13 +144,14 @@ def main():
     p = argparse.ArgumentParser(description="ArgoCD OutOfSync 根因归因")
     p.add_argument("--days", type=int, default=None)
     p.add_argument("--project", type=str, default=None)
+    p.add_argument("--app", type=str, default=None, help="只分析指定 App 名称")
     p.add_argument("--concurrency", type=int, default=4)
     p.add_argument("--output", choices=["markdown", "json"], default="markdown")
     args = p.parse_args()
 
     print("Fetching apps...", file=sys.stderr)
     apps = fetch_apps()
-    report = build_report(apps, args.days, args.project, args.concurrency)
+    report = build_report(apps, args.days, args.project, args.app, args.concurrency)
 
     if args.output == "json":
         print(json.dumps(report, ensure_ascii=False, indent=2))

@@ -179,11 +179,10 @@ def test_classify_diff_rc_1_no_content():
 
 
 def test_classify_orphaned_detected():
-    """Tabular `resources` output with Orphaned=Yes → orphaned list populated."""
+    """Tabular `resources` output with Orphaned column → orphaned list populated."""
     res_out = (
-        "Group\tKind\tNamespace\tName\tStatus\tOrphaned\n"
-        "apps\tConfigMap\tdefault\tmy-cm\tSynced\tNo\n"
-        "\tPod\tops\tstale-pod\tOutOfSync\tYes\n"
+        "GROUP  KIND  NAMESPACE  NAME  STATUS  HEALTH  \n"
+        "       Pod   ops        stale-pod  Orphaned  Missing  \n"
     )
     def fake_run(cmd, timeout=30):
         if "resources" in cmd:
@@ -194,7 +193,7 @@ def test_classify_orphaned_detected():
     with patch("argocd_deploy_stats.oos_analyzer.run", side_effect=fake_run):
         r = classify_app("my-app")
         assert len(r["orphaned"]) == 1
-        assert "Pod/" in r["orphaned"][0] or "stale-pod" in r["orphaned"][0]
+        assert "stale-pod" in r["orphaned"][0]
 
 
 def test_classify_timeout_handled():

@@ -467,3 +467,7 @@ When a second `argocd-*-ops` skill lands (e.g. `argocd-notification-ops`,
 - External: <https://argo-cd.readthedocs.io/en/stable/cli-reference/argocd/>,
   <https://argo-cd.readthedocs.io/en/stable/operator-manual/api/>.
 - Tool manual: `scripts/README.md`.
+
+## 语言要求
+
+所有交互回复都必须使用中文内容回复。用户使用中文提问时，必须用中文回答；用户使用英文提问时，也优先用中文回答。仅在用户明确要求使用英文时，才用英文回复。

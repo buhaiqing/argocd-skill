@@ -10,6 +10,7 @@ Usage:
   python -m argocd_insight diagnose                    # 全量巡检
   python -m argocd_insight diagnose --project default  # 指定项目
   python -m argocd_insight diagnose --severity high    # 只看高危
+  python -m argocd_insight diagnose --app my-app       # 只诊断单个 App
   python -m argocd_insight diagnose --output json       # 结构化输出（供 LLM 使用）
 
 脱敏原则：
@@ -27,6 +28,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Optional
+
+from argocd_insight.parse_utils import parse_diff, parse_resources
 
 
 # ---------------------------------------------------------------------------
@@ -106,44 +109,6 @@ def _fetch_history(app: str) -> tuple[int, str, str]:
 # ---------------------------------------------------------------------------
 # 诊断规则（启发式，无外部依赖）
 # ---------------------------------------------------------------------------
-
-def _parse_resources(res_out: str) -> tuple[list[str], list[str]]:
-    """
-    解析 `argocd app resources` 输出。
-    Returns: (orphaned_kinds, unhealthy_kinds)
-    """
-    orphaned = []
-    unhealthy = []
-    for line in res_out.strip().splitlines():
-        if not line or line.startswith("GROUP") or line.startswith("NAMESPACE"):
-            continue
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-        # ArgoCD resources 输出格式：
-        # GROUP  KIND  NAMESPACE  NAME  STATUS  HEALTH  ...
-        kind = parts[1] if len(parts) > 1 else "?"
-        name = parts[3] if len(parts) > 3 else parts[0]
-        health = parts[4] if len(parts) > 4 else ""
-        status = parts[5] if len(parts) > 5 else ""
-
-        if status == "Orphaned" or "\tOrphaned" in line or "Orphaned" in status:
-            orphaned.append(f"{kind}/{name}")
-        elif health and health not in ("Healthy", ""):
-            unhealthy.append(f"{kind}/{name}({health})")
-    return orphaned, unhealthy
-
-
-def _parse_diff(diff_out: str) -> dict[str, bool]:
-    """解析 diff 输出，检测增减。"""
-    has_add = has_del = False
-    for line in diff_out.splitlines():
-        ls = line.strip()
-        if ls.startswith("> ") or (ls.startswith("+") and not ls.startswith("+++")):
-            has_add = True
-        elif ls.startswith("< ") or (ls.startswith("-") and not ls.startswith("---")):
-            has_del = True
-    return {"additions": has_add, "deletions": has_del}
 
 
 def _parse_events(events_out: str) -> list[str]:
@@ -241,8 +206,8 @@ def diagnose_app(app_name: str, app_spec: dict) -> Optional[Diagnosis]:
         _, evts_out = f_evts.result()[0], f_evts.result()[1]
         _, hist_out = f_hist.result()[0], f_hist.result()[1]
 
-    orphaned, unhealthy = _parse_resources(res_out)
-    diff_info = _parse_diff(diff_out)
+    orphaned, unhealthy = parse_resources(res_out)
+    diff_info = parse_diff(diff_out)
     events = _parse_events(evts_out)
     _, history = _parse_history(hist_out)
     image_err = _detect_image_error(events)
@@ -669,14 +634,16 @@ def build_report(
     apps: list[dict],
     project_filter: str | None,
     min_severity: str | None,
+    app_filter: str | None = None,
     concurrency: int = 8,
 ) -> dict:
     """对所有 App 执行诊断，生成报告。"""
 
-    # 过滤有问题且符合 project 条件的 App
+    # 过滤有问题且符合 project/app 条件的 App
     target_apps = [
         a for a in apps
         if (not project_filter or a.get("spec", {}).get("project") == project_filter)
+        and (not app_filter or a.get("metadata", {}).get("name") == app_filter)
         and (
             a.get("status", {}).get("sync", {}).get("status") in ("OutOfSync", "Error")
             or a.get("status", {}).get("health", {}).get("status") not in ("Healthy", "Unknown", "")
@@ -794,6 +761,7 @@ def build_argparser() -> argparse.ArgumentParser:
         description="ArgoCD 问题 App 智能诊断：识别有问题的 App 并给出根因分析和修复建议",
     )
     p.add_argument("--project", help="只诊断指定项目的 App")
+    p.add_argument("--app", help="只诊断指定名称的 App")
     p.add_argument("--severity", choices=["critical", "high", "medium", "low"],
                    help="只显示该严重级别及以上的 App")
     p.add_argument("--output", choices=["markdown", "json"], default="markdown")
@@ -810,7 +778,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Got {len(apps)} apps", file=sys.stderr)
 
     t0 = time.time()
-    report = build_report(apps, args.project, args.severity, args.concurrency)
+    report = build_report(apps, args.project, args.severity, args.app, args.concurrency)
     print(f"Diagnosed {report['diagnosed']}/{report['problemApps']} apps "
           f"in {time.time()-t0:.1f}s", file=sys.stderr)
 
