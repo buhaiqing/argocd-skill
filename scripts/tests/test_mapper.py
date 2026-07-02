@@ -101,7 +101,7 @@ spec:
     flags, _ = mapper.map_source(m)
     rendered = [f.render() for f in flags]
 
-    assert "--kustomize-nameprefix stable-" in rendered
+    assert "--nameprefix stable-" in rendered
     assert "--kustomize-image my-app:ghcr.io/myorg/api:v3.0.0" in rendered
     assert "--kustomize-image second:nginx:1.25" in rendered
     assert "--kustomize-common-label env=stable" in rendered

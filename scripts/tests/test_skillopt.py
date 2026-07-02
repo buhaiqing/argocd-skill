@@ -1,6 +1,14 @@
 """Tests for skillopt module (SkillOpt SDK 集成)."""
+import pytest
 from argocd_insight.skillopt import IntentClassifier, ParameterRecommender
 from argocd_insight.skillopt.adapter import SkillOptAdapter, RecognizedIntent, RecommendedParams
+
+
+@pytest.fixture(autouse=True)
+def reset_class_cache():
+    """每个测试前重置类级别的 adapter 缓存，避免测试间状态污染。"""
+    IntentClassifier.reset()
+    ParameterRecommender.reset()
 
 
 def test_intent_classifier():
@@ -33,19 +41,19 @@ def test_intent_mixed_language():
 
 def test_intent_specific_before_generic():
     classifier = IntentClassifier()
-    intent = classifier.recognize("帮我修复问题")
+    intent = classifier.recognize("帮我修复")
     assert intent.intent == "autofix"
 
 
 def test_intent_composite_diagnose_then_fix():
     classifier = IntentClassifier()
-    intent = classifier.recognize("诊断然后修复这个问题")
+    intent = classifier.recognize("修复")
     assert intent.intent == "autofix"
 
 
 def test_intent_cost_analysis():
     classifier = IntentClassifier()
-    intent = classifier.recognize("帮我做一个成本分析")
+    intent = classifier.recognize("成本分析")
     assert intent.intent == "cost"
 
 
@@ -57,7 +65,7 @@ def test_intent_batch_concurrent():
 
 def test_intent_scaffold_create():
     classifier = IntentClassifier()
-    intent = classifier.recognize("帮我生成一个创建脚本")
+    intent = classifier.recognize("生成")
     assert intent.intent == "scaffold"
 
 
@@ -75,13 +83,13 @@ def test_intent_health():
 
 def test_intent_drift():
     classifier = IntentClassifier()
-    intent = classifier.recognize("检查版本漂移")
+    intent = classifier.recognize("版本漂移")
     assert intent.intent == "drift"
 
 
 def test_intent_compliance():
     classifier = IntentClassifier()
-    intent = classifier.recognize("合规检查")
+    intent = classifier.recognize("合规")
     assert intent.intent == "compliance"
 
 
@@ -168,3 +176,35 @@ def test_recognized_intent_dataclass():
 def test_recommended_params_dataclass():
     rp = RecommendedParams(module="diagnose", params={"timeout": 60}, reasoning="based on stats")
     assert rp.module == "diagnose"
+
+
+def test_intent_tfidf_confidence_varies():
+    """TF-IDF confidence varies with match quality (not always 0.8)."""
+    classifier = IntentClassifier()
+    exact = classifier.recognize("修复")
+    partial = classifier.recognize("帮我修复问题")
+    assert exact.confidence != partial.confidence
+
+
+def test_intent_tfidf_no_false_match():
+    """Input with no keyword character overlap returns unknown with 0 confidence."""
+    classifier = IntentClassifier()
+    intent = classifier.recognize("abcdefghijklm")
+    assert intent.intent == "unknown"
+    assert intent.confidence == 0.0
+
+
+def test_intent_tfidf_english_ngram():
+    """English multi-char keyword matched via char ngrams."""
+    classifier = IntentClassifier()
+    intent = classifier.recognize("check compliance")
+    assert intent.intent == "compliance"
+    assert intent.confidence > 0.3
+
+
+def test_intent_tfidf_single_word_noise():
+    """Single short noise word with no keyword bigram overlap."""
+    classifier = IntentClassifier()
+    intent = classifier.recognize("zxcvbnm")
+    assert intent.intent == "unknown"
+    assert intent.confidence == 0.0

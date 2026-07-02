@@ -92,8 +92,8 @@ argocd CLI 不支持用 flag 描述多源（截至 v2.13 仍是"UI/CLI 只识别
 | 优先级 | Application CRD 字段 | CLI Flag | 真实生产取值 |
 |--------|----------------------|---------|---------|
 | P0 | `spec.source.kustomize.version` | `--kustomize-version` | 生产 95% 取值 `v4.1.3` |
-| P2 | `spec.source.kustomize.namePrefix` | `--kustomize-nameprefix` | 由 kustomization.yaml 处理 |
-| P2 | `spec.source.kustomize.nameSuffix` | `--kustomize-namesuffix` | 同上 |
+| P2 | `spec.source.kustomize.namePrefix` | `--nameprefix` | 由 kustomization.yaml 处理 |
+| P2 | `spec.source.kustomize.nameSuffix` | `--namesuffix` | 同上 |
 | P2 | `spec.source.kustomize.images[]` | `--kustomize-image` | 同上，每行用独立 flag |
 | P2 | `spec.source.kustomize.commonLabels` | `--kustomize-common-label` | 同上，每对键值用独立 flag |
 | P2 | `spec.source.kustomize.commonAnnotations` | `--kustomize-common-annotation` | 同上 |

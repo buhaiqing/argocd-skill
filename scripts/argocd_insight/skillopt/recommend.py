@@ -17,10 +17,22 @@ PARAM_DEFAULTS = {
 class ParameterRecommender:
     """参数推荐器。"""
 
+    _adapter: "SkillOptAdapter | None" = None
+
+    def _get_adapter(self):
+        if ParameterRecommender._adapter is None:
+            from .adapter import SkillOptAdapter
+            ParameterRecommender._adapter = SkillOptAdapter()
+        return ParameterRecommender._adapter
+
+    @classmethod
+    def reset(cls) -> None:
+        """重置类级别的 adapter 缓存。用于测试隔离或配置变更后刷新。"""
+        cls._adapter = None
+
     def recommend(self, module: str, history: dict) -> RecommendedParams:
         """推荐最优参数。"""
-        from .adapter import SkillOptAdapter
-        adapter = SkillOptAdapter()
+        adapter = self._get_adapter()
         if adapter.is_available():
             return adapter.recommend(module, history)
 

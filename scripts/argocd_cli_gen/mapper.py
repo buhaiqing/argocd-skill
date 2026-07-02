@@ -198,9 +198,9 @@ def _map_kustomize(kus: dict, warnings: list[UnsupportedField]) -> list[Flag]:
     if "version" in kus:
         flags.append(Flag("--kustomize-version", str(kus["version"])))
     if "namePrefix" in kus:
-        flags.append(Flag("--kustomize-nameprefix", str(kus["namePrefix"])))
+        flags.append(Flag("--nameprefix", str(kus["namePrefix"])))
     if "nameSuffix" in kus:
-        flags.append(Flag("--kustomize-namesuffix", str(kus["nameSuffix"])))
+        flags.append(Flag("--namesuffix", str(kus["nameSuffix"])))
     if "namespace" in kus:
         flags.append(Flag("--kustomize-namespace", str(kus["namespace"])))
     if "kubeVersion" in kus:

@@ -123,7 +123,7 @@ def test_render_emits_dry_run_copy():
     business_scripts = [s for s in result.scripts
                         if s.relative_path == renderer.TIER_FILES[Tier.BUSINESS_APP]]
     assert business_scripts[0].dry_run_body is not None
-    assert "argocd app create --dry-run -o yaml" in business_scripts[0].dry_run_body
+    assert "argocd app create --validate=false" in business_scripts[0].dry_run_body
 
 
 def test_render_no_dry_run_when_disabled():
