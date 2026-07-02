@@ -7,9 +7,12 @@ description: |
   (3) 把 1 个 ArgoCD Application YAML 翻译成等价的 `argocd app create` 命令；
   (4) 把整个 manifest 目录批量反向生成 shell 脚本，调用 `python -m argocd_cli_gen`；
   (5) 处理 ArgoCD CLI 不支持的边界（多源 $values、kustomize.patches/components 等），回退到 `kubectl apply -f` 兜底；
-  (6) 通过 HTTP API（`/api/v1`）执行 ArgoCD 操作，适用于 CLI 失败时的自动回退；
-  (7) 诊断分析 / 漂移检测 / 健康评估 / 成本估算 / 合规检查 / 批量自动修复 / 变更影响分析 / 批量操作 / 配置模板生成 / Git 源健康检查 / 报告推送，调用 `python -m argocd_insight` 系列工具。
-  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析, 自动修复, 批量修复, autofix, 变更影响, 影响分析, impact, 操作前预览, 批量操作, 批量同步, 并发执行, batch, scaffold, 配置模板, 生成模板, Scaffold.
+  (6) 通过 HTTP API（`/api/v1`）执行 ArgoCD 操作，适用于 CLI 失败时的自动回退，调用 `python -m argocd_api`；
+  (7) 诊断分析 / 漂移检测 / 健康评估 / 成本估算 / 合规检查 / 批量自动修复 / 变更影响分析 / 批量操作 / 配置模板生成 / Git 源健康检查 / 报告推送，调用 `python -m argocd_insight` 系列工具；
+  (8) 部署频率统计 / OutOfSync 分析，调用 `python -m argocd_deploy_stats.stats` / `python -m argocd_deploy_stats.oos_analyzer`；
+  (9) 通过 HTTP API 直接操作 Pod（查找/删除孤儿 Pod），调用 `python -m ulw`；
+  (10) 可观测与自进化：执行轨迹记录、轨迹分析、经验提炼、自进化写回（自动优化参数与配置）、SkillOpt 参数推荐、离线触发（定时/阈值/会话结束），调用 `python -m argocd_insight trace` / `python -m argocd_insight.trigger.cron` 等工具。
+  Trigger keywords: argocd, ArgoCD, app of apps, App-of-Apps, Application YAML, manifest 转 CLI, argocd app create, kustomize, multi-source, 多源, 反向生成, 批量转换, 迁移 ArgoCD, GitOps, kubectl apply 兜底, HTTP API, argocd 回退, 诊断分析, 问题 App, OutOfSync, 根因归因, 漂移检测, 版本漂移, 健康评估, 稳定性, 多维度打分, 改进建议, argocd-insight, 部署频率, 部署统计, Git 源健康, repo 健康, 仓库健康, repo-health, 合规检查, syncPolicy 风险, automated, self-heal, 配置合规, 成本估算, 资源成本, 成本报告, CPU, Memory, 运行成本, Top 10, 成本分析, 自动修复, 批量修复, autofix, 变更影响, 影响分析, impact, 操作前预览, 批量操作, 批量同步, 并发执行, batch, scaffold, 配置模板, 生成模板, Scaffold, argocd_deploy_stats, 部署频率, OOS 分析, ulw, Pod 操作, 孤儿 Pod, 可观测, 轨迹, 经验提炼, 自进化, 写回, 离线触发, cron, threshold, session_end, trace, analyzer, insight_engine, evolver, skillopt, trigger.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
 
@@ -27,6 +30,8 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 - OutOfSync 诊断、版本漂移检测、健康评估等运维分析
 - 批量 sync/rollback/refresh 操作
 - 配置合规检查、成本估算、自动修复
+- 执行轨迹记录、分析经验提炼、自进化写回、离线触发（定时/阈值/会话结束）
+- 历史轨迹分析、性能瓶颈识别、参数优化建议
 
 ### ❌ 不适用场景
 - 用户要求操作 **Kubernetes 原生资源**（Deployment/Service 等）但**未提及 ArgoCD** → 让路给 k8s skill

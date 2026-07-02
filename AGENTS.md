@@ -408,6 +408,11 @@ also run these argocd-specific checks:
 8. Verify the 4-tier percentages in SKILL.md match
    `scripts/argocd_cli_gen/parser.py`'s classifier constants (or
    the test fixtures in `scripts/tests/fixtures/`).
+9. **TODO.md 同步更新**：每个新功能（含 bugfix / 文档变更 / 测试补充）完成并
+   通过 post-change 自检后，**必须**将 TODO.md 中对应项标记为 `✅` 并更新状态
+   说明。若本次变更新增了计划项但 TODO.md 尚未列出的，须同步添加新行。这是
+   **强制规则**，不可省略。TODO.md 的迭代记录表（`## 📋 迭代记录`）也必须同步
+   追加新行记录当前版本号与变更摘要。
 
 Report `[OK] argocd-skill v0.4.2 — N rounds clean` when round N
 finds no new issues.
