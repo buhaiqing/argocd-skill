@@ -30,8 +30,14 @@ import os
 import sys
 from pathlib import Path
 
-from .client import ArgoCDClient
-from argocd_insight.trace.decorator import traced
+# ponytail: 让 scripts/ 下所有子包（argocd_insight、argocd_cli_gen 等）
+# 在任何调用方式下都能被找到（python -m scripts.argocd_api / python -m argocd_api / ./argocd_api.py）
+_scripts_root = Path(__file__).parent.parent
+if str(_scripts_root) not in sys.path:
+    sys.path.insert(0, str(_scripts_root))
+
+from scripts.argocd_api.client import ArgoCDClient
+from scripts.argocd_insight.trace.decorator import traced
 
 
 # ------------------------------------------------------------------
@@ -507,7 +513,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Load .env before client
     if args.env_file and args.env_file.is_file():
-        from .client import _load_dotenv as _ld
+        from scripts.argocd_api.client import _load_dotenv as _ld
         _ld(args.env_file)
 
     try:

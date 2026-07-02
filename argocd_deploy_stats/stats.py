@@ -1,0 +1,1 @@
+../scripts/argocd_deploy_stats/stats.py

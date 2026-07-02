@@ -49,8 +49,37 @@ argocd app history APPNAME                              # 历史
 argocd app diff APPNAME                                 # 差异对比（干跑）
 argocd app manifests APPNAME [--revision REV]           # Manifest
 argocd app resources APPNAME                            # 资源树（kind/name/namespace/健康态）
+argocd app get-resource APPNAME --kind Pod              # Pod 运行时详情（phase/IP/node/containerStatuses）
 argocd app logs APPNAME [--follow] [--tail N]          # Pod 日志
 argocd app events APPNAME                              # 应用事件
+```
+
+#### P0-1.5：Pod 运行时状态查询（get-resource）
+
+> 触发词：「hdops-mcp 有几个 Pod」「查看 Pod 状态」「Pod 在哪个节点」「Pod IP」「容器是否 Ready」「Pod 重启次数」
+
+```bash
+# 查看 App 内所有 Pod 的运行时状态（phase / IP / node / Ready / restartCount）
+argocd app get-resource APPNAME --kind Pod
+
+# 查看指定 Pod 的完整 manifest（含 spec/status/containerStatuses）
+argocd app get-resource APPNAME --kind Pod --resource-name my-pod-xxx
+
+# 只看关键字段（phase / podIP / hostIP / Ready / restartCount / node）
+argocd app get-resource APPNAME --kind Pod \
+  --filter-fields status.phase,status.podIP,status.hostIP,status.conditions[?type=="Ready"].status,status.containerStatuses[:1].restartCount
+
+# 查看特定 Pod 的容器状态（容器名 / Ready / restartCount / image / containerID）
+argocd app get-resource APPNAME --kind Pod --resource-name my-pod-xxx \
+  --filter-fields status.containerStatuses[:1].name,status.containerStatuses[:1].ready,status.containerStatuses[:1].restartCount,status.containerStatuses[:1].image
+
+# 格式化输出（json / yaml / wide）
+argocd app get-resource APPNAME --kind Pod -o json
+argocd app get-resource APPNAME --kind Pod -o yaml
+
+# Python API 等价（无 ArgoCD CLI 时）
+python -m argocd_api resource-tree APPNAME          # 概览（含 Pod phase/IP）
+python -m argocd_api resource APPNAME Pod <pod-name> --ns <namespace>  # 完整规格
 ```
 
 #### P0-2：Pod / Container 日志

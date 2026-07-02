@@ -229,3 +229,6 @@ __marimo__/
 # argocd_cli_gen output (when run from repo root)
 /out/
 .codegraph
+
+# argocd_insight trace / snapshot runtime (see trace/decorator.py DEFAULT_RUNTIME_DIR)
+.runtime/

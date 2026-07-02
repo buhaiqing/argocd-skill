@@ -88,16 +88,27 @@
 
 ### 0.1 从 `.env` 加载凭证
 
-Agent 收到第一条 argocd 命令时，**优先检查本 skill 仓库根目录下的 `.env` 文件**：
+Agent 收到第一条 argocd 命令时，**按以下优先级检查并加载 `.env` 文件**：
 
+**优先级一：CWD `.env`（最高）**
 ```bash
-ENV_FILE="$(dirname "$(realpath "$0")")/../../.env"   # skill 仓库根目录
-# 实际检查：argocd-skill/.env 是否存在
+# 当前工作目录（CWD）下的 .env，最先检查
+if [ -f ".env" ]; then
+  set -a; source .env; set +a
+fi
+```
+
+**优先级二：skill 仓库根目录 `.env`（后备）**
+```bash
+# skill 仓库根目录（argocd-skill/.env）
+ENV_FILE="$(dirname "$(realpath "$0")")/../../.env"
 test -f "$ENV_FILE" && set -a; source "$ENV_FILE"; set +a
 ```
 
-- `.env` 存在于 skill 仓库根目录时，自动 `source` 注入到当前 shell env
-- `.env.example` 是模板文件（**不自动加载**），所有变量默认注释
+- **CWD `.env` 优先级最高**：用户当前会话目录下的 `.env` 最先被加载（反映用户当前工作上下文）
+- **skill 仓库根目录 `.env` 作为后备**：当 CWD 无 `.env` 时回退到此
+- **两者都存在时，CWD 覆盖**：同名变量以 CWD 为准（因为是用户当前工作区的配置）
+- **`.env.example` 是模板文件**（**不自动加载**），所有变量默认注释；可观测相关变量见其中「可观测与自进化」小节（`ARGOCD_SKILL_RUNTIME_DIR` / `ARGOCD_SKILL_SESSION_HOOK`）
 - 注入后即纳入后续认证凭证检测流程
 
 ### 0.2 认证凭证检测（4 层优先级）

@@ -91,7 +91,12 @@ argocd-skill/                  # the skill lives at the repo root (only one skil
 │   ├── batch-conversion-design.md  # argocd_cli_gen 方案设计 + 可行性论证
 │   ├── testing-guide.md       # 测试标准、委托规则、Hypothesis 属性测试
 │   ├── performance-guide.md   # 性能复盘流程、检查清单、基准指标
-│   └── agent-protocols.md     # 开机预检协议、CLI 回退协议
+│   ├── agent-protocols.md     # 开机预检协议、CLI 回退协议
+│   ├── argocd-app-lifecycle.md       # App 全生命周期 runbook
+│   ├── argocd-appproject-guide.md    # AppProject 管理 runbook
+│   ├── argocd-sync-policy-deep-dive.md  # syncPolicy 深度解析
+│   ├── argocd-appset-guide.md        # ApplicationSet runbook
+│   └── argocd-troubleshooting.md     # 故障排查（按症状分流）
 └── scripts/                   # the argocd_cli_gen batch tool + tests
     ├── argocd_cli_gen/        # python -m argocd_cli_gen
     │   ├── __init__.py
@@ -161,8 +166,8 @@ The on-disk `SKILL.md` is organized as:
    classifier (single source of truth split between Markdown and
    Python).
 5. **提示词示例** (Prompt examples) — concrete phrases grouped by
-   capability and sub-capability. New trigger phrases go here, not
-   in `description`.
+   capability and sub-capability, migrated to `references/argocd-prompts.md`.
+   New trigger phrases go there, not in `description`.
 6. **常见错误** (Common errors) — the 11-row error table.
    **This is the most important table for the agent to consult
    before responding.** Every "translate this YAML" request must
@@ -181,6 +186,7 @@ the failure mode you are introducing.
 | `ARGOCD_USERNAME` | env, exported by user | 备用：ARGOCD_AUTH_TOKEN 未设时使用 |
 | `ARGOCD_PASSWORD` | env, exported by user | 备用：ARGOCD_AUTH_TOKEN 未设时使用 |
 | `ARGOCD_SERVER` | env, e.g. `https://argocd.hd123.com/dnet-int` | NEVER ask user to paste; 支持带 context path 的 base URL |
+| `ARGOCD_SKILL_RUNTIME_DIR` | env 或 `.env`，可选 | 轨迹根目录；未设时默认 `<repo>/.runtime/argocd-skill`；见 `.env.example` |
 | `{{user.app_name}}` | user input | Ask once; reuse |
 | `{{user.namespace}}` | user input (业务 / 运维) | Ask once; reuse |
 | `{{user.project}}` | AppProject name (NOT user project) | Ask once; reuse |
@@ -350,7 +356,7 @@ also run these argocd-specific checks:
    add corresponding error rows; new error rows must reference
    existing `references/` entries.
 4. Verify every trigger phrase in `description` is also reflected
-   in **提示词示例** (the prompt-examples section), and vice versa.
+   in `references/argocd-prompts.md` (the prompt-examples section), and vice versa.
    If a new prompt example is added but not the trigger, the agent
    will not match it.
 5. Verify all `references/` cross-links resolve (each

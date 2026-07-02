@@ -1,0 +1,1 @@
+../scripts/argocd_api/__main__.py

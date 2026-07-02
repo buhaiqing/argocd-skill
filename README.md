@@ -40,7 +40,15 @@ argocd-skill/
 │   ├── cli-commands.md
 │   ├── kustomize-mapping.md
 │   ├── kustomize-examples.md
-│   └── batch-conversion-design.md
+│   ├── batch-conversion-design.md
+│   ├── agent-protocols.md
+│   ├── testing-guide.md
+│   ├── performance-guide.md
+│   ├── argocd-app-lifecycle.md
+│   ├── argocd-appproject-guide.md
+│   ├── argocd-sync-policy-deep-dive.md
+│   ├── argocd-appset-guide.md
+│   └── argocd-troubleshooting.md
 └── scripts/                   argocd_cli_gen 批量转换工具 + pytest 套件
     ├── argocd_cli_gen/        python -m argocd_cli_gen
     ├── tests/                 单元 + 集成测试
@@ -84,7 +92,7 @@ export ARGOCD_SERVER="argocd.hd123.com"
 | "把 /path/to/argo-apps 整目录生成脚本" / "批量迁移 ArgoCD" | 能力 3.2：调用 `python -m argocd_cli_gen` |
 | "这个 loki 是多源 Helm，CLI 写不出来怎么办" | 能力 3 + 兜底：回退到 `kubectl apply -f` |
 
-完整提示词示例见 [`SKILL.md`](SKILL.md) 提示词示例小节。
+完整提示词示例见 [`references/argocd-prompts.md`](references/argocd-prompts.md)。
 
 ## App-of-Apps 层级模型 (4-tier production model)
 
