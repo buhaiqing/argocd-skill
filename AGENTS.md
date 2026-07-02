@@ -370,7 +370,22 @@ also run these argocd-specific checks:
    grep -oE '"\w+(\.\w+)+"' scripts/argocd_cli_gen/mapper.py | sort -u > /tmp/py_fields.txt
    diff /tmp/md_fields.txt /tmp/py_fields.txt
    ```
-7. If a `scripts/argocd_cli_gen/*.py` file changed, run
+7. If any tool invocation in `SKILL.md` / `references/` changed or
+   is newly documented, **verify it actually works** before claiming
+   done.  Run the documented command from the repo root:
+   ```bash
+   cd /path/to/argocd-skill
+   python3 -m argocd_api --help           # HTTP API CLI
+   python3 -m argocd_cli_gen --help       # batch converter
+   python3 -m argocd_insight --help      # insight suite
+   python3 -m argocd_deploy_stats.stats --help   # deployment stats
+   python3 -m argocd_deploy_stats.oos_analyzer --help  # OOS analyzer
+   ```
+   If it fails, fix the tool's `__main__.py` or `sys.path` setup —
+   **never silently accept a broken invocation in the docs**.  This
+   rule would have caught the `python -m argocd_api` docs-vs-implementation
+   mismatch that prompted the v0.2.1 fix.
+8. If a `scripts/argocd_cli_gen/*.py` file changed, run
    `pytest scripts/tests/ -v` from the `scripts/` directory and
    confirm zero failures. Performance baseline: 97-YAML full-sample
    processing < 1 s; 500-app < 5 s.
@@ -401,7 +416,11 @@ When a second `argocd-*-ops` skill lands (e.g. `argocd-notification-ops`,
 ## What NOT to add
 
 - ❌ `requirements.txt` at the repo root — Python deps belong in
-  `scripts/requirements.txt`. Root has no Python code.
+  `scripts/requirements.txt`.  Note: repo root now has
+  `__init__.py` (namespace package marker) and tool directories
+  (`argocd_api/`, `argocd_cli_gen/`, `argocd_insight/`,
+  `argocd_deploy_stats/`) for `python -m <tool>` compatibility;
+  these are package infrastructure, not code to maintain.
 - ❌ CI / pre-commit config — no build, no lint, no CI by design.
   Tests are local-only via `pytest scripts/tests/`.
 - ❌ A `tests/` mirror at the repo root — tests are colocated with
