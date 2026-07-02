@@ -29,7 +29,7 @@ def extract_insights(report: dict[str, Any]) -> list[Insight]:
         insights.append(_error_pattern_insight(errors))
 
     bottlenecks = report.get("bottlenecks", {})
-    if bottlenecks.get("serial_chains"):
+    if bottlenecks.get("frequent_commands"):
         insights.append(_concurrency_insight(report))
 
     return insights
@@ -72,7 +72,7 @@ def _error_pattern_insight(errors: dict) -> Insight:
 
 
 def _concurrency_insight(report: dict) -> Insight:
-    chains = report["bottlenecks"]["serial_chains"]
+    chains = report["bottlenecks"]["frequent_commands"]
     reasoning = build_reasoning_chain([
         f"发现 {len(chains)} 组串行调用链",
         "串行执行可通过并发优化",

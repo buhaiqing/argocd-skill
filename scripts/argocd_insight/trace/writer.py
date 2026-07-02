@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TextIO
 
 
 class TraceWriter:
@@ -13,7 +13,7 @@ class TraceWriter:
         self.session_dir = session_dir
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self._file_index = 0
-        self._file: Any = None
+        self._file: TextIO | None = None
         self._open_file()
 
     def _open_file(self):

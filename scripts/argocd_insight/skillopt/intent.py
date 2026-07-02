@@ -17,10 +17,17 @@ INTENT_MAP = {
 class IntentClassifier:
     """意图分类器。"""
 
+    _adapter: "SkillOptAdapter | None" = None
+
+    def _get_adapter(self):
+        if IntentClassifier._adapter is None:
+            from .adapter import SkillOptAdapter
+            IntentClassifier._adapter = SkillOptAdapter()
+        return IntentClassifier._adapter
+
     def recognize(self, text: str) -> RecognizedIntent:
         """识别用户意图。"""
-        from .adapter import SkillOptAdapter
-        adapter = SkillOptAdapter()
+        adapter = self._get_adapter()
         if adapter.is_available():
             return adapter.recognize(text)
 

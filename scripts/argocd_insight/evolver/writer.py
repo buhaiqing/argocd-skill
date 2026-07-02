@@ -39,6 +39,9 @@ def evolve(insights: list[Insight], dry_run: bool = True) -> dict[str, Any]:
     return results
 
 
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
+
+
 def _do_write(insight: Insight) -> bool:
     """执行写回。"""
     action = insight.action
@@ -49,7 +52,15 @@ def _do_write(insight: Insight) -> bool:
     if not target:
         return False
 
-    path = Path(__file__).parent.parent.parent.parent / target
+    raw = Path(target)
+    # ponytail: reject absolute paths and parent traversal
+    if raw.is_absolute() or ".." in raw.parts:
+        return False
+
+    path = (_PROJECT_ROOT / target).resolve()
+    # ponytail: ensure the resolved path stays inside the project
+    if not str(path).startswith(str(_PROJECT_ROOT)):
+        return False
     if not path.exists():
         return False
 

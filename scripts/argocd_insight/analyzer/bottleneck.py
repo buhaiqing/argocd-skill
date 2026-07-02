@@ -17,18 +17,18 @@ def find_bottlenecks(events: list[dict[str, Any]]) -> dict[str, Any]:
 
     slow = [e for e in events if e.get("duration_ms", 0) > p95]
 
-    serial_chains = _find_serial_chains(events)
+    serial_chains = _find_frequent_commands(events)
 
     return {
         "hot_commands": [{"command": cmd, "count": cnt} for cmd, cnt in hot],
         "slow_calls": slow[:10],
         "p95_ms": p95,
-        "serial_chains": serial_chains,
+        "frequent_commands": serial_chains,
     }
 
 
-def _find_serial_chains(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """检测串行瓶颈。"""
+def _find_frequent_commands(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """检测高频命令（出现 >3 次即视为高频）。"""
     commands = [e.get("command", "") for e in events]
     counts = Counter(commands)
     return [{"command": cmd, "count": cnt} for cmd, cnt in counts.items() if cnt > 3]

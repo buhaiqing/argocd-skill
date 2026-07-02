@@ -201,8 +201,9 @@ def _handle_trace(args: argparse.Namespace) -> int:
     report = analyze_session(session_dir)
     print(f"Total events: {report['total_events']}")
 
+    insights = extract_insights(report) if args.extract_insights or args.evolve else []
+
     if args.extract_insights:
-        insights = extract_insights(report)
         print(f"Insights extracted: {len(insights)}")
         for i in insights:
             print(f"  - [{i.category}] {i.insight} (conf={i.confidence})")
@@ -210,7 +211,6 @@ def _handle_trace(args: argparse.Namespace) -> int:
                 print(f"      {step}")
 
     if args.evolve:
-        insights = extract_insights(report)
         results = evolve(insights, dry_run=not args.no_dry_run)
         print(f"Evolve results: low={len(results['low'])}, "
               f"medium={len(results['medium'])}, skipped={len(results['skipped'])}")

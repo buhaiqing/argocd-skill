@@ -21,7 +21,7 @@ def test_extract_concurrency_insight():
         "stats": {"module_distribution": {"diagnose": 12}},
         "bottlenecks": {
             "hot_commands": [{"command": "argocd app list", "count": 8}],
-            "serial_chains": [{"command": "argocd app list", "count": 5}],
+            "frequent_commands": [{"command": "argocd app list", "count": 5}],
         },
         "errors": {},
     }

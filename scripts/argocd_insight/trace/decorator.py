@@ -7,13 +7,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .session import Session, get_session_id, _session_local
+from .session import Session, get_session_id
 from .writer import TraceWriter
 
 
 def get_trace_dir() -> Path:
     """获取运行时目录。"""
-    base = Path(os.getenv("ARGOCD_SKILL_RUNTIME_DIR", ".runtime/argocd-skill"))
+    base = Path(os.getenv("ARGOCD_SKILL_RUNTIME_DIR"))
+    if not base:
+        base = Path.home() / ".runtime" / "argocd-skill"
     return base.resolve()
 
 
@@ -66,17 +68,24 @@ def traced(module: str, operation: str):
     return decorator
 
 
+_MASKED_PARAMS = {"password", "token", "secret", "api_key", "apikey"}
+
+
 def _reconstruct_cmd(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-    """从参数重建命令字符串。"""
+    """从参数重建命令字符串（敏感参数值打码）。"""
     parts: list[str] = []
     for a in args:
         if isinstance(a, list):
             parts.extend(str(x) for x in a)
         elif isinstance(a, str):
             parts.append(a)
-    parts.extend(
-        f"--{k}" if isinstance(v, bool) and v else f"--{k}={v}"
-        for k, v in kwargs.items()
-        if v is not None
-    )
+    for k, v in kwargs.items():
+        if v is None:
+            continue
+        if k.lower() in _MASKED_PARAMS:
+            parts.append(f"--{k}=***")
+        elif isinstance(v, bool) and v:
+            parts.append(f"--{k}")
+        else:
+            parts.append(f"--{k}={v}")
     return " ".join(parts)
