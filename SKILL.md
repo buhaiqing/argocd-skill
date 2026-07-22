@@ -1,8 +1,8 @@
 ---
 name: argocd-skill
 description: |
-  ArgoCD CLI 全流程技能。Use when: (1) argocd CLI 安装/升级（含跨平台 Linux/macOS/Windows/Docker、指定版本、离线包）；(2) 自然语言生成 argocd CLI 命令（app create/sync/rollback/get/list/login 等 20+ 高频操作）；(3) 单个 Application YAML 反向转为 `argocd app create` 命令；(4) 批量处理 manifest 目录（调用 `argocd_cli_gen`）；(5) 批量操作（batch sync/rollback/refresh/concurrent）；(6) 变更影响分析（impact/影响分析）；(7) 诊断分析/漂移检测/版本漂移/健康评估/稳定性打分/合规检查/成本估算/自动修复；(8) 部署频率统计/OOS 分析；(9) Git 源健康检查（repo_health）；(10) 多集群对比（multi-cluster）；(11) 报告推送（report-push）/配置模板生成（scaffold）；(12) HTTP API 回退（CLI→API→kubectl apply 三级兜底）+ Pod 操作（资源树/App归属/删除孤儿 Pod/ulw）。
-  Trigger keywords: argocd, ArgoCD, argocd app, argocd app create, argocd sync, argocd login, app of apps, App-of-Apps, kustomize, multi-source, 多源, 反向生成, 批量转换, GitOps, kubectl apply, HTTP API, 诊断分析, OutOfSync, 漂移检测, 健康评估, 合规检查, 成本估算, 自动修复, 批量操作, 配置模板, 部署频率, 自进化, 离线触发, argocd_insight, argocd_deploy_stats, ulw, 孤儿 Pod, 轨迹, insight_engine, evolver, skillopt, batch, impact, repo_health, multi-cluster, report-push, scaffold.
+  ArgoCD CLI 全流程技能。Use when: (1) argocd CLI 安装/升级；(2) 自然语言生成 argocd CLI 命令（20+ 操作）；(3) Application YAML 反向转 `argocd app create`；(4) 批量 manifest 转换（argocd_cli_gen）；(5) 批量操作（batch）；(6) 变更影响分析（impact）；(7) 诊断/漂移/健康/合规/成本/自动修复；(8) 部署频率/OOS 统计；(9) Git 源健康（repo_health）；(10) 多集群对比；(11) 报告推送/配置模板；(12) HTTP API 回退 + Pod 操作（ulw）；(13) ArgoCD Rollouts 渐进式交付：Deployment→Rollout 转换、Canary/BlueGreen/Analysis 配置生成、kubectl argo rollouts 命令生成、Rollout 状态与 AnalysisRun 归因诊断（argocd_insight rollouts diagnose）。
+  Trigger keywords: argocd, ArgoCD, argocd app, app of apps, App-of-Apps, kustomize, 多源, 反向生成, 批量转换, GitOps, kubectl apply, HTTP API, 诊断, OutOfSync, 漂移, 健康, 合规, 成本, 自动修复, 批量, 配置模板, 部署频率, 自进化, 离线触发, argocd_insight, argocd_deploy_stats, ulw, 孤儿 Pod, batch, impact, repo_health, multi-cluster, report-push, scaffold, rollouts, Rollout, kubectl argo rollouts, Deployment 转 Rollout, 渐进式交付, canary, bluegreen, AnalysisRun, 金丝雀, 蓝绿, 灰度发布.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
 
@@ -80,6 +80,12 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 - **触发**：`autofix` 或合规修复建议被自动执行
 - **避免**：所有修复必须先展示 dry-run，明确询问用户"是否继续"
 - **友好提示**：⚠️ 修复操作需确认 → 详见附录 A 格式
+
+### 死法 11：Deployment 直接替换 Rollout 时丢失 strategy/Service
+- **触发**：把 Deployment 的 `spec` 平移到 Rollout 但漏掉 `strategy` 与 Service 关联
+- **表现**：Rollout 退化为 basic（一次性全量替换，无金丝雀/蓝绿），或 controller 报错 "no service defined"
+- **避免**：3.6.1 转换必须补 `strategy` 字段 + `service` 引用；输出前提示 Service 需预存在
+- **友好提示**：⚠️ Rollout 转换缺 strategy/Service → 详见附录 A 格式
 
 ---
 
@@ -178,6 +184,49 @@ if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi
 python -m argocd_cli_gen --input <absolute_path> --output <out_dir> --upsert --emit-dry-run
 ```
 读取 `report.md` 展示结果。
+
+---
+
+### 3.6 能力四：ArgoCD Rollouts 渐进式交付
+
+> 完整指南见 [references/argocd-rollouts-guide.md](references/argocd-rollouts-guide.md)。
+> 运行态只读诊断：`python -m argocd_insight rollouts diagnose <name> -n <ns>`
+
+ArgoCD Rollouts 是独立于核心 ArgoCD Application 的渐进式交付控制器，
+用 `Rollout` CRD（替代 Deployment）实现 Canary / BlueGreen / Analysis 驱动的发布。
+
+**典型场景（agent 应主动设想并引导）**：
+
+| 场景 | 用户意图 | agent 动作 |
+|------|----------|-----------|
+| Deployment → Rollout 改造 | "把这个 Deployment 改成灰度发布" | 提取 `spec.template` / `selector` / `replicas`，生成等价 `Rollout` 骨架（strategy 留空待选） |
+| 金丝雀发布 | "用金丝雀，5%→25%→50%→100%" | 生成 canary `steps`：`setWeight` + `pause{duration}` 阶梯 + 末步 `analysis` |
+| 蓝绿切换 | "蓝绿发布，验证通过再切流量" | 生成 blueGreen：`previewService`/`activeService` + `autoPromotionSeconds` 或手动 `promote` |
+| 分析卡点 | "发布卡住了，帮我看为什么" | `argocd_insight rollouts diagnose` → 输出 paused/aborted/analysis 失败归因 |
+| 命令生成 | "查看 rollout 状态 / 手动推进 / 回滚" | 生成 `kubectl argo rollouts get/promote/abort/undo/set image` |
+
+**分流规则**：
+
+1. 用户给的是 **Deployment YAML** → 走 3.6.1 转换流程，输出 `Rollout` YAML（不强行用 CLI）。
+2. 用户问 **状态/卡点/失败归因** → 走诊断工具（只读，不写）。
+3. 用户要 **CLI 命令** → 生成 `kubectl argo rollouts` 子命令。
+
+**3.6.1 Deployment → Rollout 转换**
+
+- `spec.replicas` / `spec.selector` / `spec.template` 原样平移到 `Rollout.spec`。
+- **必须**新增 `service` 引用（Rollout 通过 `spec.strategy.canary/blueGreen` 关联 Service）。
+- **必须**新增 `strategy` 字段（canary / blueGreen），否则 Rollout 退化为 basic 无渐进能力。
+- 应用名净化遵循 `s/_/-/g`（与死法 2 一致）。
+- 输出后提示用户：Rollout 需集群已安装 `argo-rollouts` controller，且 Service 需预先存在。
+
+**3.6.2 诊断调用**
+
+```bash
+python -m argocd_insight rollouts diagnose <name> -n <ns> --output json
+```
+
+返回 `RolloutDiagnosis`（paused/aborted/Progressing 归类 + 严重级别 + action 列表）
+与关联 `AnalysisRun` 归因（metric 阈值未达标 / run 未完成）。
 
 ---
 

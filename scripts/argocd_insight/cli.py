@@ -7,6 +7,7 @@ import sys
 
 from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
 from . import trend, config_compare, predict, autofix, impact, batch, scaffold
+from . import rollouts
 from .snapshot_store import SnapshotStore
 from .trace.decorator import traced
 
@@ -202,6 +203,17 @@ def _handle_scaffold(args: argparse.Namespace) -> int:
         return scaffold.main([])
 
 
+@traced(module="insight", operation="rollouts", interface="cli")
+def _handle_rollouts(args: argparse.Namespace) -> int:
+    argv: list[str] = [args.command, args.name, "--namespace", args.namespace]
+    if args.kubectl != "kubectl":
+        argv += ["--kubectl", args.kubectl]
+    if args.analysis_label:
+        argv += ["--analysis-label", args.analysis_label]
+    argv += ["--output", args.output]
+    return rollouts.main(argv)
+
+
 @traced(module="insight", operation="trace", interface="cli")
 def _handle_trace(args: argparse.Namespace) -> int:
     """分析轨迹与提炼经验。"""
@@ -370,6 +382,17 @@ def main() -> int:
 
     p_scaffold = sub.add_parser("scaffold", help="生成 ArgoCD Application 配置模板（4-tier）")
     p_scaffold.set_defaults(func=_handle_scaffold)
+
+    p_rollouts = sub.add_parser("rollouts", help="ArgoCD Rollouts 只读诊断（状态 + Analysis 归因）")
+    p_rollouts_sub = p_rollouts.add_subparsers(dest="command", required=True)
+    p_rollouts_diag = p_rollouts_sub.add_parser("diagnose", help="诊断单个 Rollout")
+    p_rollouts_diag.add_argument("name", help="Rollout 名称")
+    p_rollouts_diag.add_argument("--namespace", "-n", default="default", help="命名空间")
+    p_rollouts_diag.add_argument("--kubectl", default="kubectl", help="kubectl 可执行文件路径")
+    p_rollouts_diag.add_argument("--analysis-label", default="argo-rollouts=resource",
+                                 help="关联 AnalysisRun 的 label 选择器")
+    p_rollouts_diag.add_argument("--output", choices=["markdown", "json"], default="markdown")
+    p_rollouts.set_defaults(func=_handle_rollouts)
 
     p_trace = sub.add_parser("trace", help="分析轨迹与提炼经验")
     p_trace.add_argument("--session", help="会话目录路径")
