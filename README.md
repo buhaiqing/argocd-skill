@@ -75,8 +75,24 @@ argocd version --client
 
 ### 2. 配置认证 (Configure credentials)
 
+所有工具共享统一认证方式（优先级从高到低）：
+
+| 优先级 | 凭证 | 说明 |
+|---|------|------|
+| 1 | `ARGOCD_AUTH_TOKEN` | 推荐，自动化场景优先 |
+| 2 | `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` | ARGOCD_AUTH_TOKEN 未设时使用 |
+| 3 | `~/.config/argocd/config` | `argocd login` 已写入的配置 |
+
+> Agent 支持 `.env` 文件自动检测（从 skill 根目录或当前工作目录加载）。
+
 ```bash
+# 推荐方式（自动化场景）
 export ARGOCD_AUTH_TOKEN="***"   # 来自 argocd account generate-token 或 SSO
+export ARGOCD_SERVER="argocd.hd123.com"   # 支持带 context path 的 base URL
+
+# 备用方式（无 token 时）
+export ARGOCD_USERNAME="your-user"
+export ARGOCD_PASSWORD="your-pass"
 export ARGOCD_SERVER="argocd.hd123.com"
 ```
 
