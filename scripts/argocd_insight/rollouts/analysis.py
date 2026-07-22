@@ -82,7 +82,7 @@ def analyze_run(run: dict[str, Any]) -> AnalysisFinding:
 
     if phase in ("Pending", "Running"):
         # 区分正常进行中 vs 卡住（长时间无进展）
-        if status.get("phase") == "Running" and not status.get("metricResults"):
+        if phase == "Running" and not status.get("metricResults"):
             details.append("Running 但尚无 metricResults，可能查询未返回")
             root_cause = "分析进行中，尚未产出结果（若长期无变化则卡住）"
             category = "no_progression"

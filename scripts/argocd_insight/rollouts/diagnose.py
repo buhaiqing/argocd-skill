@@ -179,7 +179,7 @@ def diagnose_status(rollout: dict[str, Any]) -> RolloutDiagnosis:
         status=phase,
         paused=paused,
         aborted=aborted,
-        message=_short(message),
+        message=message,
         severity=severity,
         root_cause=root_cause,
         category=category,
