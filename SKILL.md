@@ -57,6 +57,7 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 ### 死法 4：automated 和 prune/self-heal 关系错误
 - **触发**：用了 `--auto-prune` / `--self-heal` 但没加 `--sync-policy automated`
 - **避免**：若出现 `--auto-prune` / `--self-heal`，必须同时出现 `--sync-policy automated`
+- **深度参考**：[references/argocd-sync-policy-deep-dive.md](references/argocd-sync-policy-deep-dive.md)（automated/prune/selfHeal 完整解析）
 - **友好提示**：❌ 参数缺少必需配置 → 详见附录 A 格式
 
 ### 死法 5：强行将多源 `spec.sources` 转 CLI
@@ -72,6 +73,7 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 ### 死法 7：业务应用错误开启 automated
 - **触发**：业务应用 YAML 被加上 `--sync-policy automated`
 - **避免**：`namespace` 是业务 ns → **禁止 automated**，只保留 `PruneLast=true`
+- **深度参考**：[references/argocd-sync-policy-deep-dive.md](references/argocd-sync-policy-deep-dive.md)（automated 业务规范完整解析）
 - **友好提示**：⚠️ 生产应用不应开启自动同步 → 详见附录 A 格式
 
 ### 死法 8：CLI 失败时未自动回退 HTTP API
@@ -116,6 +118,7 @@ if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi
 - 交互模式：提示用户执行 `argocd login --server <server>`
 
 **Step 6: 记录会话状态** → 后续命令缺省时自动沿用，输出开头标注「复用：key=value」
+> 完整协议详见 [references/agent-protocols.md](references/agent-protocols.md)（开机预检 / CLI 回退 / 认证优先级）
 
 ---
 
@@ -151,6 +154,7 @@ if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi
 **Step 2: 提取必备参数**（一次问齐）→ `app_name`、`repo_url`、`revision`(默认 HEAD)、`path`、`dest_server`(默认 kubernetes.default.svc)、`dest_namespace`、`project`(默认 default)
 
 **Step 3: 危险命令二次确认** → `delete/terminate-op/cluster rm/repo rm/proj delete` 必须用户重复确认目标名称
+> AppProject 管理详见 [references/argocd-appproject-guide.md](references/argocd-appproject-guide.md)
 
 **Step 4: 构建命令**
 **Step 5: 附加 syncPolicy**（依据 4-tier 层级）
@@ -165,6 +169,7 @@ if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi
 ### 3.4 能力三：YAML 反向生成 CLI
 
 **分流**：单个 YAML 文本块 / ≤4 个片段 → 3.4.1；目录路径 / ≥5 个文件 → 3.4.2
+> ApplicationSet 管理详见 [references/argocd-appset-guide.md](references/argocd-appset-guide.md)
 
 #### 3.4.1 单 YAML 内联转换
 
@@ -198,6 +203,7 @@ python -m argocd_cli_gen --input <absolute_path> --output <out_dir> --upsert --e
 
 **Step 2: 认证/网络问题** → HTTP API 回退：`python -m argocd_api <op> <app>`
 **Step 3: 语法问题** → 修正 flag 名称（`--kustomize-*` vs `--helm-*`）
+> CLI 回退协议详见 [references/agent-protocols.md](references/agent-protocols.md)
 **Step 4: 未知问题** → `kubectl apply -f` 兜底
 
 ---
@@ -270,5 +276,13 @@ python -m argocd_cli_gen --input <absolute_path> --output <out_dir> --upsert --e
 | [references/batch-conversion-design.md](references/batch-conversion-design.md) | 批量工具设计 |
 | [references/argocd-troubleshooting.md](references/argocd-troubleshooting.md) | 按症状分流的故障排查 |
 | [references/argocd-insight-commands.md](references/argocd-insight-commands.md) | 诊断工具集使用手册 |
+| [references/argocd-app-lifecycle.md](references/argocd-app-lifecycle.md) | App 全生命周期管理 |
+| [references/argocd-appproject-guide.md](references/argocd-appproject-guide.md) | AppProject 管理 |
+| [references/argocd-appset-guide.md](references/argocd-appset-guide.md) | ApplicationSet 管理 |
+| [references/argocd-sync-policy-deep-dive.md](references/argocd-sync-policy-deep-dive.md) | syncPolicy 深度解析 |
+| [references/agent-protocols.md](references/agent-protocols.md) | 开机预检 / CLI 回退协议 |
+| [references/argocd-prompts.md](references/argocd-prompts.md) | 提示词示例 |
+| [references/performance-guide.md](references/performance-guide.md) | 性能指南与基准 |
+| [references/testing-guide.md](references/testing-guide.md) | 测试标准与用例 |
 
 外部：[ArgoCD CLI 安装](https://argo-cd.readthedocs.io/en/stable/cli_installation/) · [命令参考](https://argo-cd.readthedocs.io/en/stable/user-guide/commands/argocd/) · [GitHub Release](https://github.com/argoproj/argo-cd/releases)
