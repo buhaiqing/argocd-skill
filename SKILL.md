@@ -50,12 +50,44 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 - **失败表现**：`FATA[0000] rpc error: code = Unauthenticated desc = no session information`
 - **根因**：argocd CLI 需要有效 token/session，不像 kubectl 有 kubeconfig
 - **避免策略**：每次会话首条命令前执行开机自检协议（见第三节）
+- **用户友好提示**：
+  ```
+  ❌ 认证失败：未登录或登录已过期
+  
+  原因：argocd CLI 需要有效的认证会话才能操作。
+  
+  请先执行登录（选择一种方式）：
+  
+  方式一（推荐）：设置 token 后自动登录
+    export ARGOCD_AUTH_TOKEN="你的token"
+    export ARGOCD_SERVER="https://argocd.hd123.com"
+    argocd login $ARGOCD_SERVER --auth-token $ARGOCD_AUTH_TOKEN
+  
+  方式二：用户名密码登录
+    export ARGOCD_USERNAME="用户名"
+    export ARGOCD_PASSWORD="密码"
+    argocd login $ARGOCD_SERVER -u $ARGOCD_USERNAME -p $ARGOCD_PASSWORD
+  
+  方式三：交互式登录
+    argocd login $ARGOCD_SERVER
+  ```
 
 ### 死法 2：应用名包含下划线 `_`
 - **触发条件**：YAML 中 `metadata.name: my_app` 或用户输入 `app_name=my_app`
 - **失败表现**：`FATA[0000] application name "my_app" contains invalid character '_'`
 - **根因**：ArgoCD 应用名只允许 `[a-z0-9.-]`，下划线是非法字符
 - **避免策略**：**强制替换逻辑**：所有 `metadata.name` 在传入 CLI 前必须 `s/_/-/g`
+- **用户友好提示**：
+  ```
+  ❌ 应用名非法：包含不支持的字符 '_'
+  
+  ArgoCD 应用名只允许：小写字母、数字、点号(.)、连字符(-)
+  不支持：下划线(_)、大写字母、空格
+  
+  修正方法：将下划线替换为连字符
+    my_app  →  my-app
+    app_name_v2  →  app-name-v2
+  ```
 
 ### 死法 3：混淆 Kustomize 和 Helm 参数
 - **触发条件**：YAML 中是 Kustomize 配置，但 CLI 用了 `--helm-set`；或反之
@@ -65,12 +97,40 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
   - 若 `spec.source.kustomize` 存在 → 使用 `--kustomize-*` 前缀
   - 若 `spec.source.helm` 存在 → 使用 `--helm-*` 前缀
   - **严禁混用**
+- **用户友好提示**：
+  ```
+  ❌ 参数类型不匹配
+  
+  请确认 YAML 中使用的构建方式：
+  
+  Kustomize 配置（spec.source.kustomize）
+    ✅ 使用：--kustomize-name-prefix, --kustomize-image, --kustomize-common-label
+    ❌ 不要用：--helm-set, --helm-release-name
+  
+  Helm Chart（spec.source.helm 或 spec.source.chart）
+    ✅ 使用：--helm-set, --helm-release-name, --values
+    ❌ 不要用：--kustomize-name-prefix, --kustomize-image
+  ```
 
 ### 死法 4：automated 和 prune/self-heal 关系错误
 - **触发条件**：用了 `--auto-prune` 或 `--self-heal` 但没加 `--sync-policy automated`
 - **失败表现**：prune/self-heal 不生效，或命令报错
 - **根因**：prune/self-heal 只在 automated 模式下有意义
 - **避免策略**：**级联检查**：若 `--auto-prune` 或 `--self-heal` 出现，必须同时出现 `--sync-policy automated`
+- **用户友好提示**：
+  ```
+  ❌ 自动清理/自愈参数缺少必需配置
+  
+  --auto-prune 和 --self-heal 必须配合 --sync-policy automated 使用：
+  
+  ✅ 正确写法：
+    --sync-policy automated --auto-prune --self-heal
+  
+  ❌ 错误写法（单独使用无效）：
+    --auto-prune
+    --self-heal
+    --auto-prune --self-heal
+  ```
 
 ### 死法 5：强行将多源 `spec.sources` 转 CLI
 - **触发条件**：YAML 包含 `spec.sources`（数组）而非 `spec.source`（单对象），且含 `$values` 引用
@@ -79,6 +139,18 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 - **避免策略**：**检测到 `spec.sources` 时**：
   - 若长度=1 → 降级为单源处理
   - 若长度>1 → **立即停止转换**，输出 `kubectl apply -f <file>` 作为兜底方案
+- **用户友好提示**：
+  ```
+  ⚠️ 检测到多源配置（spec.sources 包含多个 source）
+  
+  ArgoCD CLI 不支持多源应用的创建命令。
+  
+  兜底方案：使用 kubectl 直接应用原始 YAML
+    kubectl apply -f <original.yaml>
+  
+  说明：kubectl 会将多源配置完整下发，ArgoCD 控制器会正常处理。
+  缺点：无法享受 argocd app 相关命令的便利性（如 argocd app sync）。
+  ```
 
 ### 死法 6：运维组件错误开启 CreateNamespace
 - **触发条件**：k8s_ops 目录下的 YAML 被转成 CLI 时加了 `--sync-option CreateNamespace=true`
@@ -87,6 +159,16 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 - **避免策略**：**namespace 判定逻辑**：
   - 若 `destination.namespace` 是 `ops`/`loki`/`kube-system` 等运维 ns → **强制 `--sync-option CreateNamespace=false`**
   - 只有业务应用才允许 `CreateNamespace=true`
+- **用户友好提示**：
+  ```
+  ❌ 运维组件不应创建 namespace
+  
+  以下 namespace 由基础设施 Root 统一管理，不应由应用自行创建：
+    ops / loki / kube-system / monitoring / argocd 等
+  
+  修正方法：添加 --sync-option CreateNamespace=false
+    argocd app create <name> --sync-option CreateNamespace=false
+  ```
 
 ### 死法 7：业务应用错误开启 automated
 - **触发条件**：业务应用 YAML（`destination.namespace` 非 `argo-root`，非运维 ns）被加上 `--sync-policy automated`
@@ -95,24 +177,66 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 - **避免策略**：**automated 判定逻辑**：
   - 若 `destination.namespace == "argo-root"` → 允许 automated
   - 若 `destination.namespace` 是业务 ns → **禁止 automated**，只保留 `PruneLast=true`
+- **用户友好提示**：
+  ```
+  ⚠️ 生产环境业务应用不应开启自动同步
+  
+  automated 模式会在 Git 变更时自动同步到集群，可能引入未经审核的配置。
+  
+  层级规范：
+    ✅ 聚合入口 Root（namespace=argo-root）：可开启 automated
+    ❌ 业务应用（namespace=业务ns）：必须手动 sync
+  
+  正确做法：手动触发 sync
+    argocd app sync <app-name>
+  ```
 
 ### 死法 8：CLI 失败时未自动回退 HTTP API
 - **触发条件**：`argocd login` 因 context path / insecure 失败，或 `argocd app` 命令超时
 - **失败表现**：Agent 直接报错停止，未尝试替代方案
 - **根因**：部分环境 CLI 不可用，但 HTTP API `/api/v1` 仍可访问
 - **避免策略**：**双通道原则**：CLI 失败后必须自动尝试 `python -m argocd_api` 回退（见第三节）
+- **用户友好提示**：
+  ```
+  ⚠️ argocd CLI 命令失败，尝试 HTTP API 替代方案
+  
+  原始错误：[具体错误信息]
+  
+  使用 HTTP API 回退：
+    python -m argocd_api <operation> <app_name> [args...]
+  
+  说明：HTTP API 可绕过部分 CLI 限制（如 context path、证书问题）。
+  ```
 
 ### 死法 9：敏感信息泄露
 - **触发条件**：`ARGOCD_AUTH_TOKEN`、`ARGOCD_PASSWORD` 被回显或写入日志
 - **失败表现**：凭证泄露到屏幕或文件，安全风险
 - **根因**：Agent 未对敏感变量做脱敏处理
 - **避免策略**：**强制脱敏**：所有输出中 `ARGOCD_AUTH_TOKEN` 和 `ARGOCD_PASSWORD` 必须替换为 `***`
+- **用户友好提示**：
+  ```
+  🔒 敏感信息保护
+  
+  您的凭证不会显示在输出中。
+  显示内容中的敏感值均已脱敏为 ***
+  ```
 
 ### 死法 10：afix/fix 操作未确认直接执行
 - **触发条件**：`argocd_insight.autofix` 或合规修复建议被自动执行
 - **失败表现**：未经用户确认直接修改生产配置
 - **根因**：Agent 未区分 dry-run 和实际执行
 - **避免策略**：**两步确认**：所有修复操作必须先展示 dry-run 结果，**明确询问用户"是否继续"**，获得肯定答复后才执行
+- **用户友好提示**：
+  ```
+  ⚠️ 检测到修复操作，需要确认
+  
+  将执行以下变更：
+    [变更内容]
+  
+  这是 dry-run 预览，不会实际修改。
+  
+  确认执行？输入 "是" 或 "继续" 以确认
+  ```
 
 ---
 
@@ -440,7 +564,65 @@ python -m argocd_api <operation> <app_name> [args...]
 
 ---
 
-## 附录 A：4-Tier 生产模型（决策依据）
+## 附录 A：用户友好错误输出规范
+
+当遇到错误时，Agent 必须按以下格式输出：
+
+```
+<状态图标> <错误分类>
+
+<一句话说明问题>
+
+<可选：根因说明>
+
+<自助排查步骤>
+  1. 第一步
+  2. 第二步
+  3. 第三步（如有）
+
+<可选：兜底方案>
+  兜底：<替代方案>
+```
+
+**状态图标规范**：
+| 图标 | 含义 | 使用场景 |
+|------|------|---------|
+| `❌` | 失败/不可恢复 | 命令执行失败、参数错误 |
+| `⚠️` | 警告/需确认 | 危险操作、多源兜底、修复确认 |
+| `🔒` | 安全/凭证相关 | 敏感信息、登录问题 |
+| `ℹ️` | 提示/信息 | 成功但有注意事项 |
+
+**示例**：
+```
+❌ 认证失败：未登录或登录已过期
+
+argocd CLI 需要有效的认证会话才能操作。
+
+请先执行登录：
+  1. 设置环境变量：export ARGOCD_AUTH_TOKEN="你的token"
+  2. 执行登录：argocd login $ARGOCD_SERVER --auth-token $ARGOCD_AUTH_TOKEN
+
+兜底：如 token 不可用，请使用用户名密码登录
+```
+
+---
+
+## 附录 B：常见错误速查表（用户自助排查）
+
+| 错误信息关键词 | 可能原因 | 自助排查步骤 |
+|---------------|---------|-------------|
+| `Unauthenticated` / `no session` | 未登录或登录过期 | 执行 `argocd login` 或检查 `ARGOCD_AUTH_TOKEN` |
+| `invalid character '_'` | 应用名包含下划线 | 将应用名中的 `_` 替换为 `-` |
+| `unknown flag` | 参数类型错误 | 确认 YAML 类型：Kustomize 用 `--kustomize-*`，Helm 用 `--helm-*` |
+| `connection refused` | 网络不通或地址错误 | 检查 `ARGOCD_SERVER` 是否可访问 |
+| `timeout` | 网络延迟或服务不可用 | 尝试增加超时或检查服务状态 |
+| `namespace.*already exists` | namespace 重复创建 | 运维 namespace 应由 Root 管理，添加 `CreateNamespace=false` |
+| `spec.sources.*` 多行报错 | 多源应用不支持 CLI | 使用 `kubectl apply -f <yaml>` 兜底 |
+| `automated.*required` | automated 相关参数缺失 | 确保 `--sync-policy automated` 在 `--auto-prune` 之前 |
+
+---
+
+## 附录 B：4-Tier 生产模型（决策依据）
 
 | 层级 | namespace 特征 | automated | CreateNamespace | labels |
 |------|---------------|-----------|-----------------|--------|
