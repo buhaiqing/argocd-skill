@@ -84,6 +84,28 @@
 
 ---
 
+## ✅ P4 — ArgoCD Rollouts 渐进式交付（v0.6.0）
+
+> 并入现有 argocd-skill：Deployment→Rollout 转换、Canary/BlueGreen/Analysis 配置、
+> kubectl argo rollouts 命令生成、Rollout 状态与 AnalysisRun 失败归因诊断。
+
+| 能力 | 命令/工具 | 状态 | 优先级 |
+|------|---------|------|--------|
+| Rollout 状态诊断 | `python -m argocd_insight rollouts diagnose` | ✅ 14/14 测试通过 | P1 |
+| AnalysisRun 失败归因 | `rollouts/analysis.py`（metric 未达标 / run 未完 / 无 progression） | ✅ | P1 |
+| Deployment→Rollout 转换参考 | `references/argocd-rollouts-guide.md` §2 | ✅ 文档 | P2 |
+| Canary/BlueGreen/Analysis 配置 | `references/argocd-rollouts-guide.md` §3 | ✅ 文档 | P2 |
+| kubectl argo rollouts 命令生成 | `references/argocd-rollouts-guide.md` §4 | ✅ 文档 | P2 |
+
+**已实现模块（P4）：**
+- `argocd_insight/rollouts/` — diagnose（状态归因）/ analysis（AnalysisRun 归因）/ main（CLI 入口）
+- `argocd_insight/cli.py` — 注册 `rollouts diagnose` 子命令（@traced）
+- `references/argocd-rollouts-guide.md` — 转换 + 三策略 + 命令映射 + 诊断
+- `SKILL.md` — 能力四章节 + 死法 11（Deployment 转换缺 strategy/Service）
+- `references/argocd-prompts.md` — Rollouts 触发短语分组
+
+---
+
 ## 📋 迭代记录
 
 | 日期 | 版本 | 变更 | 测试 |

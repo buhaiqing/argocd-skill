@@ -400,3 +400,38 @@ python -m argocd_insight trace --session <session_id> --extract-insights
 # 完整流程：分析 + 提炼 + 自进化（dry-run）
 python -m argocd_insight trace --session <session_id> --extract-insights --evolve
 ```
+
+## ArgoCD Rollouts（渐进式交付）
+
+> 深度参考：[argocd-rollouts-guide.md](argocd-rollouts-guide.md)
+
+**Deployment → Rollout 转换：**
+- "把这个 Deployment 改成灰度发布"
+- "帮我把 my-app 的 Deployment 转成 Rollout"
+- "用金丝雀方式发布 my-app"
+- "改成蓝绿部署，验证通过再切流量"
+
+**Canary / BlueGreen 配置：**
+- "金丝雀 5%→25%→50%→100%，每步观察 5 分钟"
+- "蓝绿发布，手动 promote 切流量"
+- "在发布步骤里加一个成功率分析卡点"
+
+**分析卡点 / 状态诊断：**
+- "我的 rollout 卡住了，帮我看为什么"
+- "发布被 abort 了，分析原因"
+- "AnalysisRun 失败了，是哪里没达标"
+- "诊断一下 my-rollout 的发布状态"
+
+**命令生成（kubectl argo rollouts）：**
+- "怎么手动推进 rollout 到下一步"
+- "中止这次发布 / 回滚到上一版"
+- "更新 rollout 的镜像到 1.2.0"
+- "查看 rollout 的分析结果"
+
+**任一触发 → Agent 应：**
+- 转换场景：按 [argocd-rollouts-guide.md](argocd-rollouts-guide.md) §2 生成 Rollout YAML
+- 状态/卡点场景：
+  ```bash
+  python -m argocd_insight rollouts diagnose <name> -n <ns> --output json
+  ```
+- 命令场景：生成 `kubectl argo rollouts <subcommand>`
