@@ -120,6 +120,10 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 
 ### 3.1 会话开机自检协议（首条命令前强制执行）
 
+> **认证优先级（所有 ArgoCD 工具共享）**：
+> `ARGOCD_AUTH_TOKEN`（推荐）→ `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` → `~/.config/argocd/config`
+> 支持 `.env` 文件自动检测（skill 根目录或当前目录）。
+
 **Step 1: 加载环境变量**
 ```bash
 # 检查 .env 文件是否存在
