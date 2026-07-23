@@ -121,6 +121,7 @@
 | 2026-07-02 | v0.4.1 | P3-3 批量操作：batch sync/rollback/refresh 并发执行 | 新增 |
 | 2026-07-03 | v0.5.0 | P3.5 可观测与自进化：trace/analyzer/insight_engine/evolver/skillopt + 离线触发（cron/threshold/session_end） | 586/586 ✅ |
 | 2026-07-23 | v0.5.1 | argocd_api: delete-resource/delete 加 --yes 跳过确认；agent-protocols: .env↔config 同步 + gRPC 参数提取协议 | ✅ |
+| 2026-07-23 | v0.5.2 | Code review 修复：import 兜底路径 + AGENTS.md 同步校验 + 文档示例脱敏 + §0.1.5 交叉引用 | ✅ |
 
 ---
 

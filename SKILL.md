@@ -114,7 +114,7 @@ if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi
 - 交互模式：提示用户执行 `argocd login --server <server>`
 
 **Step 6: 记录会话状态** → 后续命令缺省时自动沿用，输出开头标注「复用：key=value」
-> 完整协议详见 [references/agent-protocols.md](references/agent-protocols.md)（开机预检 / CLI 回退 / 认证优先级）
+> 完整协议详见 [references/agent-protocols.md](references/agent-protocols.md)（开机预检 / CLI 回退 / 认证优先级 / env→config 同步 / gRPC 参数提取）
 
 ---
 

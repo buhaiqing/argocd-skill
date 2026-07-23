@@ -24,7 +24,7 @@ ArgoCD tutorial.
 
 ## Current state
 
-The repository is **v0.5.1 (2026-07-23) — actively developed**.
+The repository is **v0.5.2 (2026-07-23) — actively developed**.
 The on-disk state is:
 
 ```
@@ -401,7 +401,15 @@ also run these argocd-specific checks:
    **never silently accept a broken invocation in the docs**.  This
    rule would have caught the `python -m argocd_api` docs-vs-implementation
    mismatch that prompted the v0.2.1 fix.
-8. If a `scripts/argocd_cli_gen/*.py` file changed, run
+8. If `argocd_api/__main__.py` changed, **verify it stays in sync**
+   with `scripts/argocd_api/__main__.py` — both files contain
+   identical logic and must be kept as copies. Run:
+   ```bash
+   diff argocd_api/__main__.py scripts/argocd_api/__main__.py
+   ```
+   If they differ, reconcile by copying the changed file over the other
+   and note the reconciliation in the commit message.
+9. If a `scripts/argocd_cli_gen/*.py` file changed, run
    `pytest scripts/tests/ -v` from the `scripts/` directory and
    confirm zero failures. Performance baseline: 97-YAML full-sample
    processing < 1 s; 500-app < 5 s.
@@ -414,7 +422,7 @@ also run these argocd-specific checks:
    **强制规则**，不可省略。TODO.md 的迭代记录表（`## 📋 迭代记录`）也必须同步
    追加新行记录当前版本号与变更摘要。
 
-Report `[OK] argocd-skill v0.5.1 — N rounds clean` when round N
+Report `[OK] argocd-skill v0.5.2 — N rounds clean` when round N
 finds no new issues.
 
 ## Cross-skill delegation (provisional)

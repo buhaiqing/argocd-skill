@@ -139,3 +139,4 @@ regression 回滚：`git revert <bad-commit> && git tag -d vX.Y.Z && git push or
 | 2026-07-02 | v0.4.1 | P3-3 批量操作：batch sync/rollback/refresh 并发执行。新增模块：batch.py（16 测试）。支持按 project/label/status 过滤，dry-run 模式，可配置并发数。|
 | 2026-07-02 | v0.4.2 | P3-4 配置模板（scaffold）：4-tier 模型快速生成 ArgoCD Application YAML + CLI 命令。新增模块：scaffold.py（31 测试）。SKILL.md 能力(15)。|
 | 2026-07-23 | v0.5.1 | argocd_api: delete-resource/delete 加 --yes 跳过确认；agent-protocols: .env↔config 同步 + gRPC 参数提取协议优化。|
+| 2026-07-23 | v0.5.2 | Code review 修复：argocd_api import 兜底路径；AGENTS.md 同步校验命令；agent-protocols.md 示例脱敏 + §0.1.5 交叉引用。|

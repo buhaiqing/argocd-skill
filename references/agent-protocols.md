@@ -113,6 +113,8 @@ test -f "$ENV_FILE" && set -a; source "$ENV_FILE"; set +a
 
 ### 0.1.5 `.env` → `~/.config/argocd/config` 同步 + 重新登录
 
+> 前置条件：§0.1.4 的 `.env` 注入已完成，`ARGOCD_SERVER` / `ARGOCD_USERNAME` / `ARGOCD_PASSWORD` 已在 shell 中可用。
+
 `.env` 中的 `ARGOCD_SERVER` / `ARGOCD_USERNAME` / `ARGOCD_PASSWORD` 可能与本地 config 不一致。Agent 在进入凭证检测前，**必须**执行一次 env→config 同步：
 
 **触发条件**：以下任一成立时执行同步：
@@ -122,18 +124,18 @@ test -f "$ENV_FILE" && set -a; source "$ENV_FILE"; set +a
 4. `.env` 中的 `ARGOCD_USERNAME` / `ARGOCD_PASSWORD` **与 config 中匹配 user 的凭证不同**
 
 ```bash
-# 解析 ARGOCD_SERVER（如 https://argocd.hd123.com/dnet-int）
-# → host=argocd.hd123.com, path=/dnet-int, grpc-web=true, insecure=true
+# 解析 ARGOCD_SERVER（如 https://argocd.example.com/dnet-int）
+# → host=argocd.example.com, path=/dnet-int, grpc-web=true, insecure=true
 ```
 
 **同步步骤（Agent 按顺序执行）：**
 
 **Step 1 — 确保 config 有 server 条目**
 ```bash
-# 检查 servers[] 中是否有匹配 argocd.hd123.com 的条目
+# 检查 servers[] 中是否有匹配 argocd.example.com 的条目
 # 没有则写入：
 argocd config set-server \
-  --server argocd.hd123.com \
+  --server argocd.example.com \
   --grpc-web-root-path /dnet-int \
   --insecure
 ```
@@ -150,7 +152,7 @@ D. 上一步 argocd CLI 命令执行时返回认证错误（401/403/过期）
 **Step 3 — 用 `.env` 凭证重新 login**
 ```bash
 # 不需要拆 ARGOCD_SERVER——argocd login 用 config 的参数
-argocd login argocd.hd123.com \
+argocd login argocd.example.com \
   --username "$ARGOCD_USERNAME" \
   --password "$ARGOCD_PASSWORD" \
   --grpc-web \
@@ -187,17 +189,17 @@ python3 -m argocd_api login
 
 ```yaml
 # ~/.config/argocd/config 典型结构
-current-context: argocd.hd123.com/dnet-int
+current-context: argocd.example.com/dnet-int
 servers:
 - grpc-web: true
   grpc-web-root-path: /dnet-int
   insecure: true
-  server: argocd.hd123.com
+  server: argocd.example.com
 ```
 
 **解析流程：**
 
-1. 从 `current-context` 确定目标 server 名称（如 `argocd.hd123.com/dnet-int`）
+1. 从 `current-context` 确定目标 server 名称（如 `argocd.example.com/dnet-int`）
 2. 在 `servers[]` 中找到匹配的 server 条目（匹配 `server` 字段或 `name` 字段）
 3. 提取以下参数：
    - `grpc-web`（boolean）：决定 `--grpc-web` flag
@@ -210,7 +212,7 @@ servers:
 
 **正确登录示例（从 config 提取参数后）：**
 ```bash
-argocd login argocd.hd123.com \
+argocd login argocd.example.com \
   --grpc-web \
   --grpc-web-root-path /dnet-int \
   --insecure
@@ -218,7 +220,7 @@ argocd login argocd.hd123.com \
 
 **反例（从 ARGOCD_SERVER 直取完整 URL）：**
 ```bash
-# ❌ 错误：ARGOCD_SERVER=https://argocd.hd123.com/dnet-int
+# ❌ 错误：ARGOCD_SERVER=https://argocd.example.com/dnet-int
 argocd login "$ARGOCD_SERVER"
 # → 报错 "Argo CD server address unspecified"
 ```

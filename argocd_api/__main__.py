@@ -517,7 +517,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # Load .env before client
     if args.env_file and args.env_file.is_file():
-        from scripts.argocd_api.client import _load_dotenv as _ld
+        try:
+            from scripts.argocd_api.client import _load_dotenv as _ld
+        except ImportError:
+            from argocd_api.client import _load_dotenv as _ld
         _ld(args.env_file)
 
     try:
