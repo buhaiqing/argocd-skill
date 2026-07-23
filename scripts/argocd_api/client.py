@@ -151,13 +151,23 @@ class ArgoCDClient:
         name: str,
         follow: bool = False,
         tail: int = 100,
-    ) -> str:
-        """Return application logs (plain text, not JSON)."""
+    ) -> requests.Response:
+        """Return the raw HTTP response for application logs.
+
+        The caller iterates ``response.iter_lines()`` (follow mode) or
+        reads ``response.text`` (one-shot). Streaming is enabled only
+        when ``follow`` is True so logs print incrementally instead of
+        being buffered until the server closes the connection.
+        """
         params: dict[str, str] = {
             "follow": str(follow).lower(),
             "tail": str(tail),
         }
-        return self._get(f"/applications/{name}/logs", params=params).text
+        return self._get(
+            f"/applications/{name}/logs",
+            params=params,
+            stream=follow,
+        )
 
     # ------------------------------------------------------------------
     # Resource-level operations
@@ -310,9 +320,15 @@ class ArgoCDClient:
             **kwargs,
         )
         if resp.status_code >= 400:
+            # Tolerate non-JSON bodies and both ArgoCD error envelopes
+            # ("message" or "error") so failures surface a useful message.
+            try:
+                body = resp.json()
+                message = body.get("message") or body.get("error") or resp.text
+            except ValueError:
+                message = resp.text or f"HTTP {resp.status_code}"
             raise RuntimeError(
-                f"ArgoCD API {resp.status_code} at {path}: "
-                f"{resp.json().get('message', resp.text)}",
+                f"ArgoCD API {resp.status_code} at {path}: {message}",
             )
         return resp
 

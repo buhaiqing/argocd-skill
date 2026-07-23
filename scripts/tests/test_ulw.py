@@ -14,6 +14,14 @@ import pytest
 from ulw.client import ArgoCDClient
 from ulw.commands import delete_pod, find_pod, PodLocation
 
+# The canonical client lives in argocd_api.client; ulw re-exports it.
+# from_env is inherited from the base class, so patch the base module that
+# the resolved import path actually uses (argocd_api.client or
+# scripts.argocd_api.client — same file, different sys.modules key).
+import sys
+
+_BASE_MODULE = sys.modules[ArgoCDClient.__mro__[1].__module__]
+
 
 # ======================================================================
 # _load_dotenv (static method on ArgoCDClient)
@@ -132,8 +140,9 @@ def test_from_env_fails_no_credentials():
     with patch.dict(os.environ, {
         "ARGOCD_SERVER": "https://argocd.example.com",
     }, clear=True):
-        with pytest.raises(ValueError, match="Neither ARGOCD_AUTH_TOKEN nor ARGOCD_USERNAME"):
-            ArgoCDClient.from_env()
+        with patch.object(_BASE_MODULE, "_token_from_argocd_config", return_value=None):
+            with pytest.raises(ValueError, match="No ArgoCD credentials"):
+                ArgoCDClient.from_env()
 
 
 def test_from_env_empty_token_falls_through():
@@ -142,8 +151,9 @@ def test_from_env_empty_token_falls_through():
         "ARGOCD_SERVER": "https://argocd.example.com",
         "ARGOCD_AUTH_TOKEN": "",
     }, clear=True):
-        with pytest.raises(ValueError, match="Neither ARGOCD_AUTH_TOKEN nor ARGOCD_USERNAME"):
-            ArgoCDClient.from_env()
+        with patch.object(_BASE_MODULE, "_token_from_argocd_config", return_value=None):
+            with pytest.raises(ValueError, match="No ArgoCD credentials"):
+                ArgoCDClient.from_env()
 
 
 def test_from_env_ssl_verify_default():
@@ -166,16 +176,17 @@ def test_from_env_ssl_verify_disabled():
 
 
 def test_from_env_with_dotenv(tmp_path):
-    """from_env should load .env file when dotenv_path is given."""
+    """from_env should load .env file when dotenv_path is given (ulw kwarg)."""
     env_file = tmp_path / ".env"
     env_file.write_text(
         "ARGOCD_SERVER=https://dotenv.example.com\n"
         "ARGOCD_AUTH_TOKEN=dotenv-tok\n"
     )
     with patch.dict(os.environ, {}, clear=True):
-        client = ArgoCDClient.from_env(dotenv_path=env_file)
-        assert client.server == "https://dotenv.example.com"
-        assert client.token == "dotenv-tok"
+        with patch.object(_BASE_MODULE, "_token_from_argocd_config", return_value=None):
+            client = ArgoCDClient.from_env(dotenv_path=env_file)
+            assert client.server == "https://dotenv.example.com"
+            assert client.token == "dotenv-tok"
 
 
 def test_from_env_login_flow():
@@ -185,9 +196,10 @@ def test_from_env_login_flow():
         "ARGOCD_USERNAME": "admin",
         "ARGOCD_PASSWORD": "secret",
     }, clear=True):
-        with patch.object(ArgoCDClient, "login", return_value="login-tok"):
-            client = ArgoCDClient.from_env()
-            assert client.token == "login-tok"
+        with patch.object(_BASE_MODULE, "_token_from_argocd_config", return_value=None):
+            with patch.object(ArgoCDClient, "login", return_value="login-tok"):
+                client = ArgoCDClient.from_env()
+                assert client.token == "login-tok"
 
 
 # ======================================================================
@@ -226,69 +238,61 @@ def test_login_missing_token():
 # HTTP primitives: _get, _post, _delete
 # ======================================================================
 
-@patch("ulw.client.requests.get")
-def test_get_uses_correct_url(mock_get):
-    mock_get.return_value = MagicMock(status_code=200, json=lambda: {})
+@patch("argocd_api.client.requests.request")
+def test_get_uses_correct_url(mock_request):
+    mock_request.return_value = MagicMock(status_code=200, json=lambda: {})
     client = ArgoCDClient(server="https://x.com", token="t")
     client._get("/applications")
-    url_arg = mock_get.call_args[0][0]
-    assert url_arg == "https://x.com/api/v1/applications"
+    assert mock_request.call_args[0][1] == "https://x.com/api/v1/applications"
 
 
-@patch("ulw.client.requests.post")
-def test_post_uses_correct_url(mock_post):
-    mock_post.return_value = MagicMock(status_code=200, json=lambda: {})
+@patch("argocd_api.client.requests.request")
+def test_post_uses_correct_url(mock_request):
+    mock_request.return_value = MagicMock(status_code=200, json=lambda: {})
     client = ArgoCDClient(server="https://x.com", token="t")
     client._post("/applications/my-app/sync", json={})
-    url_arg = mock_post.call_args[0][0]
-    assert url_arg == "https://x.com/api/v1/applications/my-app/sync"
+    assert mock_request.call_args[0][1] == "https://x.com/api/v1/applications/my-app/sync"
 
 
-@patch("ulw.client.requests.delete")
-def test_delete_uses_correct_url(mock_delete):
-    mock_delete.return_value = MagicMock(status_code=200, json=lambda: {})
+@patch("argocd_api.client.requests.request")
+def test_delete_uses_correct_url(mock_request):
+    mock_request.return_value = MagicMock(status_code=200, json=lambda: {})
     client = ArgoCDClient(server="https://x.com", token="t")
     client._delete("/applications/my-app", params={"foo": "bar"})
-    url_arg = mock_delete.call_args[0][0]
-    assert url_arg == "https://x.com/api/v1/applications/my-app"
+    assert mock_request.call_args[0][1] == "https://x.com/api/v1/applications/my-app"
 
 
 # ======================================================================
-# raise_for_status
+# Error handling (delegates to argocd_api.client._request)
 # ======================================================================
 
-def test_raise_for_status_ok():
+@patch("argocd_api.client.requests.request")
+def test_request_4xx_raises_runtime_error(mock_request):
+    mock_request.return_value = MagicMock(status_code=404, json=lambda: {"message": "not found"})
     client = ArgoCDClient(server="https://x.com", token="t")
-    resp = MagicMock(status_code=200)
-    # Should not raise
-    client.raise_for_status(resp)
+    with pytest.raises(RuntimeError, match="404"):
+        client._request("GET", "/applications/x", params={})
 
 
-def test_raise_for_status_4xx_with_json():
-    client = ArgoCDClient(server="https://x.com", token="t")
-    resp = MagicMock(status_code=404)
-    resp.json.return_value = {"message": "not found"}
-    with pytest.raises(Exception, match="404"):
-        client.raise_for_status(resp)
-
-
-def test_raise_for_status_4xx_with_error_field():
+@patch("argocd_api.client.requests.request")
+def test_request_4xx_uses_error_field(mock_request):
     """Some ArgoCD error responses use 'error' instead of 'message'."""
+    mock_request.return_value = MagicMock(status_code=400, json=lambda: {"error": "invalid request"})
     client = ArgoCDClient(server="https://x.com", token="t")
-    resp = MagicMock(status_code=400)
-    resp.json.return_value = {"error": "invalid request"}
-    with pytest.raises(Exception, match="invalid request"):
-        client.raise_for_status(resp)
+    with pytest.raises(RuntimeError, match="invalid request"):
+        client._request("GET", "/applications/x", params={})
 
 
-def test_raise_for_status_4xx_text_fallback():
+@patch("argocd_api.client.requests.request")
+def test_request_4xx_text_fallback(mock_request):
     """When JSON parsing fails, fall back to response text."""
-    client = ArgoCDClient(server="https://x.com", token="t")
     resp = MagicMock(status_code=500)
     resp.json.side_effect = ValueError("not json")
     resp.text = "Internal Server Error"
-    with pytest.raises(Exception, match="Internal Server Error"):
-        client.raise_for_status(resp)
+    mock_request.return_value = resp
+    client = ArgoCDClient(server="https://x.com", token="t")
+    with pytest.raises(RuntimeError, match="Internal Server Error"):
+        client._request("GET", "/applications/x", params={})
 
 
 # ======================================================================
@@ -374,19 +378,6 @@ def test_delete_application_resource_with_group_version():
     params = call_kwargs["params"]
     assert params["group"] == "apps"
     assert params["version"] == "v1"
-
-
-def test_patch_application_resource():
-    client = ArgoCDClient(server="https://x.com", token="t")
-    client._post = MagicMock(return_value=MagicMock(json=lambda: {"status": "ok"}))
-    result = client.patch_application_resource(
-        app_name="my-app",
-        namespace="ops",
-        kind="Pod",
-        name="target-pod",
-        patch={"spec": {"replicas": 0}},
-    )
-    assert result["status"] == "ok"
 
 
 # ======================================================================

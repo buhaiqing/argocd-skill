@@ -297,22 +297,28 @@ def cmd_history(client: ArgoCDClient, args: argparse.Namespace) -> int:
     if args.json:
         print(stdjson.dumps(history, indent=2, ensure_ascii=False))
         return 0
-    print(f"{'ID':<6} {'REVISION':<12} {'STATUS':<12} {'DEPLOYED AT':<30}")
-    print("-" * 60)
+    print(f"{'ID':<6} {'REVISION':<16} {'DEPLOYED AT':<30}")
+    print("-" * 54)
     for h in history:
         hid = h.get("id", "")
         rev = h.get("revision", "")
-        status = h.get("deployedAt", {}).get("status", "") or h.get("status", "")
-        deployed_at = h.get("deployedAt", {}).get("time", "") or h.get("deployedAt", "")
-        print(f"{hid:<6} {rev:<12} {status:<12} {deployed_at:<30}")
+        # RevisionHistory.deployedAt is an RFC3339 timestamp string.
+        deployed_at = h.get("deployedAt", "")
+        print(f"{hid:<6} {rev:<16} {deployed_at:<30}")
     print(f"\nTotal: {len(history)} history entries")
     return 0
 
 
 @traced(module="api", operation="logs", interface="api")
 def cmd_logs(client: ArgoCDClient, args: argparse.Namespace) -> int:
-    logs = client.get_application_logs(args.app, follow=args.follow, tail=args.tail)
-    print(logs, end="")
+    resp = client.get_application_logs(args.app, follow=args.follow, tail=args.tail)
+    if args.follow:
+        # Stream lines as they arrive; iter_lines yields None on keep-alive.
+        for line in resp.iter_lines(decode_unicode=True):
+            if line is not None:
+                print(line)
+    else:
+        print(resp.text, end="")
     return 0
 
 

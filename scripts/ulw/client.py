@@ -38,6 +38,19 @@ class UlwClient(_BaseArgoCDClient):
         """Load environment variables from a ``.env`` file."""
         _load_dotenv_fn(path)
 
+    @classmethod
+    def from_env(
+        cls,
+        dotenv_path: str | Path | None = None,
+        **kwargs: Any,
+    ) -> "UlwClient":
+        """ulw-compatible factory: accepts the historical ``dotenv_path`` kwarg.
+
+        The canonical client renamed this to ``env_path``; this shim maps
+        the old name so existing ulw callers (e.g. ``ulw.py``) keep working.
+        """
+        return super().from_env(env_path=dotenv_path, **kwargs)
+
     def get_application_resource_tree(self, name: str) -> list[dict[str, Any]]:
         """Return the managed-resources tree items for an Application.
 
