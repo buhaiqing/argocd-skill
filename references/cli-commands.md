@@ -296,6 +296,35 @@ argocd app get my-app -o json | jq '{sync: .status.sync.status, health: .status.
 argocd app sync my-app --prune
 ```
 
+### 对 App 内 Resource 执行 Action
+
+> ArgoCD 支持对 App 管理的 K8s 资源执行内置或自定义 Action（如重启 Deployment、缩容/扩容等）。
+
+```bash
+# 列出 App 内所有资源可用的 Action
+argocd app actions list APPNAME
+
+# 列出指定 kind 的可用 Action
+argocd app actions list APPNAME --kind Deployment
+
+# 对 App 内某个资源执行 Action（按 kind + name 定位）
+argocd app actions run APPNAME restart \
+  --kind Deployment \
+  --resource-name my-deployment \
+  --namespace production
+
+# 对 App 内所有匹配的同类资源批量执行 Action
+argocd app actions run APPNAME restart \
+  --kind Deployment \
+  --namespace production \
+  --all
+
+# 列出 App 内所有资源（含过滤参数）
+argocd app actions list APPNAME --kind Deployment -o yaml
+```
+
+**使用场景：** 无需 kubectl，手动触发 Pod 重启、HPA 调整、ConfigMap reload 等。Action 必须是 K8s 资源上已定义的 Action（通常是 `kind` 级联动作如 restart）。
+
 ### 等待同步
 
 ```bash

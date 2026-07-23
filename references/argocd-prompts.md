@@ -21,6 +21,14 @@
 - "argocd login 怎么用 token 登录"
 - "怎么删除一个 ArgoCD 应用还顺便清理资源"
 
+## 资源操作（app actions）
+
+- "列出 my-app 里所有可用 Action"
+- "对 my-app 里的 Deployment 执行 restart 操作"
+- "帮我重启 my-app 里名为 api-service 的 Pod"
+- "把 my-app 所有 Deployment 缩容到 0 再扩容回 1"
+- "批量重启 prod 环境所有 App 里的 Pod"
+
 ## 运维 Runbooks（深度操作指南）
 
 **生命周期：** 见 [argocd-app-lifecycle.md](argocd-app-lifecycle.md)

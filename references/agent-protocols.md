@@ -111,6 +111,63 @@ test -f "$ENV_FILE" && set -a; source "$ENV_FILE"; set +a
 - **`.env.example` 是模板文件**（**不自动加载**），所有变量默认注释；可观测相关变量见其中「可观测与自进化」小节（`ARGOCD_SKILL_RUNTIME_DIR` / `ARGOCD_SKILL_SESSION_HOOK`）
 - 注入后即纳入后续认证凭证检测流程
 
+### 0.1.5 `.env` → `~/.config/argocd/config` 同步 + 重新登录
+
+`.env` 中的 `ARGOCD_SERVER` / `ARGOCD_USERNAME` / `ARGOCD_PASSWORD` 可能与本地 config 不一致。Agent 在进入凭证检测前，**必须**执行一次 env→config 同步：
+
+**触发条件**：以下任一成立时执行同步：
+1. `~/.config/argocd/config` **不存在** → 从头创建
+2. `.env` 中 `ARGOCD_SERVER` 的 server 在 config `servers[]` 中**无匹配条目**
+3. `.env` 中 `ARGOCD_SERVER` 的 server 在 config 中匹配，但对应 user 的 `auth-token` **为空或过期**
+4. `.env` 中的 `ARGOCD_USERNAME` / `ARGOCD_PASSWORD` **与 config 中匹配 user 的凭证不同**
+
+```bash
+# 解析 ARGOCD_SERVER（如 https://argocd.hd123.com/dnet-int）
+# → host=argocd.hd123.com, path=/dnet-int, grpc-web=true, insecure=true
+```
+
+**同步步骤（Agent 按顺序执行）：**
+
+**Step 1 — 确保 config 有 server 条目**
+```bash
+# 检查 servers[] 中是否有匹配 argocd.hd123.com 的条目
+# 没有则写入：
+argocd config set-server \
+  --server argocd.hd123.com \
+  --grpc-web-root-path /dnet-int \
+  --insecure
+```
+
+**Step 2 — 判断是否需要重新登录**
+```
+需要重新登录的条件（任一）：
+A. 步骤 1 新增了 server 条目（首次配置）
+B. config 中该 server 对应的 user 的 auth-token 为空
+C. .env 的 username/password 与 config 不同
+D. 上一步 argocd CLI 命令执行时返回认证错误（401/403/过期）
+```
+
+**Step 3 — 用 `.env` 凭证重新 login**
+```bash
+# 不需要拆 ARGOCD_SERVER——argocd login 用 config 的参数
+argocd login argocd.hd123.com \
+  --username "$ARGOCD_USERNAME" \
+  --password "$ARGOCD_PASSWORD" \
+  --grpc-web \
+  --grpc-web-root-path /dnet-int \
+  --insecure
+# → 成功后将新 token 写入 config（argocd CLI 自动处理）
+```
+
+**Step 4 — 验证新 token**
+```bash
+argocd account get-user-info
+# 或
+python3 -m argocd_api login
+```
+
+**为什么必须重新 login：** `argocd login` 会自动将新 token 写入 `~/.config/argocd/config` 的对应 user 条目下。后续所有 `argocd` 命令无需再传 `--auth-token` 或 `--server`，均沿用当前 context。如果 `.env` 中的 `ARGOCD_SERVER` / `ARGOCD_USERNAME` / `ARGOCD_PASSWORD` 较 config 有更新但不重新 login，会导致 config 中的 token 与 server 不匹配，后续命令返回 401/403。
+
 ### 0.2 认证凭证检测（4 层优先级）
 
 按最高优先级的可用凭证处理：
@@ -123,6 +180,50 @@ test -f "$ENV_FILE" && set -a; source "$ENV_FILE"; set +a
 | **4** | `.env` 中的 `ARGOCD_AUTH_TOKEN` | `.env` 中的 token（不推荐，但作为后备兜底） |
 
 > **凭证屏蔽规则（铁律）：** 任何来源的 `ARGOCD_AUTH_TOKEN`、`ARGOCD_PASSWORD` 在 Agent 输出中一律 mask 为 `***`，**绝不回显**。
+
+#### 登录参数提取（优先级 2 的细化流程）
+
+上述优先级 2（`~/.config/argocd/config`）**不仅是 token 来源，也是 gRPC 登录参数的权威来源**。Agent 在调用 `argocd login` 前，必须按以下顺序解析 config：
+
+```yaml
+# ~/.config/argocd/config 典型结构
+current-context: argocd.hd123.com/dnet-int
+servers:
+- grpc-web: true
+  grpc-web-root-path: /dnet-int
+  insecure: true
+  server: argocd.hd123.com
+```
+
+**解析流程：**
+
+1. 从 `current-context` 确定目标 server 名称（如 `argocd.hd123.com/dnet-int`）
+2. 在 `servers[]` 中找到匹配的 server 条目（匹配 `server` 字段或 `name` 字段）
+3. 提取以下参数：
+   - `grpc-web`（boolean）：决定 `--grpc-web` flag
+   - `grpc-web-root-path`（string）：决定 `--grpc-web-root-path` 参数
+   - `insecure`（boolean）：决定 `--insecure` flag
+
+   如果无法从 config 提取（如 config 文件不存在或格式异常），再从 `ARGOCD_SERVER` URL 中解析：
+   - URL 的 host 部分作为 server 地址
+   - URL 的 path 部分作为 `grpc-web-root-path`（如 `/dnet-int`）
+
+**正确登录示例（从 config 提取参数后）：**
+```bash
+argocd login argocd.hd123.com \
+  --grpc-web \
+  --grpc-web-root-path /dnet-int \
+  --insecure
+```
+
+**反例（从 ARGOCD_SERVER 直取完整 URL）：**
+```bash
+# ❌ 错误：ARGOCD_SERVER=https://argocd.hd123.com/dnet-int
+argocd login "$ARGOCD_SERVER"
+# → 报错 "Argo CD server address unspecified"
+```
+
+> **不要用 `curl` 测 gRPC-web 服务连通性：** ArgoCD server 使用 gRPC-web 协议，`curl` 不支持（即使 `/api/v1/session` 也不会返回正常 JSON，只会得到 `HTTP 000` 或协议错误）。直接走 `argocd login --grpc-web`。
 
 ### 0.3 `argocd` CLI 可用性与 `ARGOCD_SERVER`
 

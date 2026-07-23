@@ -120,6 +120,7 @@
 | 2026-07-02 | v0.4.0 | P3-优化层 P0：autofix（批量修复）+ impact（变更影响分析） | 16/16 ✅ |
 | 2026-07-02 | v0.4.1 | P3-3 批量操作：batch sync/rollback/refresh 并发执行 | 新增 |
 | 2026-07-03 | v0.5.0 | P3.5 可观测与自进化：trace/analyzer/insight_engine/evolver/skillopt + 离线触发（cron/threshold/session_end） | 586/586 ✅ |
+| 2026-07-23 | v0.5.1 | argocd_api: delete-resource/delete 加 --yes 跳过确认；agent-protocols: .env↔config 同步 + gRPC 参数提取协议 | ✅ |
 
 ---
 

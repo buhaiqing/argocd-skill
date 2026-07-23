@@ -214,13 +214,14 @@ def cmd_delete_resource(client: ArgoCDClient, args: argparse.Namespace) -> int:
         print("[argocd-api] error: namespace is required", file=sys.stderr)
         return 1
 
-    confirm = input(
-        f"[argocd-api] delete {args.kind}/{args.name} "
-        f"via App {args.app} (ns={ns})? Type 'yes': ",
-    )
-    if confirm.strip().lower() != "yes":
-        print("[argocd-api] aborted", file=sys.stderr)
-        return 1
+    if not args.yes:
+        confirm = input(
+            f"[argocd-api] delete {args.kind}/{args.name} "
+            f"via App {args.app} (ns={ns})? Type 'yes': ",
+        )
+        if confirm.strip().lower() != "yes":
+            print("[argocd-api] aborted", file=sys.stderr)
+            return 1
 
     result = client.delete_application_resource(
         app_name=args.app,
@@ -292,10 +293,11 @@ def cmd_create(client: ArgoCDClient, args: argparse.Namespace) -> int:
 
 @traced(module="api", operation="delete", interface="api")
 def cmd_delete(client: ArgoCDClient, args: argparse.Namespace) -> int:
-    confirm = input(f"[argocd-api] delete application '{args.app}'? Type 'yes': ")
-    if confirm.strip().lower() != "yes":
-        print("[argocd-api] aborted", file=sys.stderr)
-        return 1
+    if not args.yes:
+        confirm = input(f"[argocd-api] delete application '{args.app}'? Type 'yes': ")
+        if confirm.strip().lower() != "yes":
+            print("[argocd-api] aborted", file=sys.stderr)
+            return 1
     result = client.delete_application(args.app, cascade=args.cascade)
     print(stdjson.dumps(result, indent=2, ensure_ascii=False))
     return 0
@@ -443,6 +445,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ns", help="Namespace")
     p.add_argument("--group", default="")
     p.add_argument("--version", default="")
+    p.add_argument("--yes", action="store_true", help="Skip confirmation")
     p.set_defaults(func=cmd_delete_resource)
 
     # login
@@ -475,6 +478,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("app")
     p.add_argument("--cascade", action="store_true", default=True,
                    help="Cascade delete resources (default: true)")
+    p.add_argument("--yes", action="store_true", help="Skip confirmation")
     p.set_defaults(func=cmd_delete)
 
     # rollback

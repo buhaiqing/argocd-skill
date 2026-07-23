@@ -2,7 +2,7 @@
 name: argocd-skill
 description: |
   ArgoCD CLI 全流程技能。Use when: (1) argocd CLI 安装/升级；(2) 自然语言生成 argocd CLI 命令（20+ 操作）；(3) Application YAML 反向转 `argocd app create`；(4) 批量 manifest 转换（argocd_cli_gen）；(5) 批量操作（batch）；(6) 变更影响分析（impact）；(7) 诊断/漂移/健康/合规/成本/自动修复；(8) 部署频率/OOS 统计；(9) Git 源健康（repo_health）；(10) 多集群对比；(11) 报告推送/配置模板；(12) HTTP API 回退 + Pod 操作（ulw）；(13) ArgoCD Rollouts 渐进式交付：Deployment→Rollout 转换、Canary/BlueGreen/Analysis 配置生成、kubectl argo rollouts 命令生成、Rollout 状态与 AnalysisRun 归因诊断（argocd_insight rollouts diagnose）。
-  Trigger keywords: argocd, ArgoCD, argocd app, app of apps, App-of-Apps, kustomize, 多源, 反向生成, 批量转换, GitOps, kubectl apply, HTTP API, 诊断, OutOfSync, 漂移, 健康, 合规, 成本, 自动修复, 批量, 配置模板, 部署频率, 自进化, 离线触发, argocd_insight, argocd_deploy_stats, ulw, 孤儿 Pod, batch, impact, repo_health, multi-cluster, report-push, scaffold, rollouts, Rollout, kubectl argo rollouts, Deployment 转 Rollout, 渐进式交付, canary, bluegreen, AnalysisRun, 金丝雀, 蓝绿, 灰度发布.
+  Trigger keywords: argocd, ArgoCD, argocd app, app of apps, App-of-Apps, kustomize, 多源, 反向生成, 批量转换, GitOps, kubectl apply, HTTP API, 诊断, OutOfSync, 漂移, 健康, 合规, 成本, 自动修复, 批量, 配置模板, 部署频率, 自进化, 离线触发, argocd_insight, argocd_deploy_stats, ulw, 孤儿 Pod, batch, impact, repo_health, multi-cluster, report-push, scaffold, rollouts, Rollout, kubectl argo rollouts, Deployment 转 Rollout, 渐进式交付, canary, bluegreen, AnalysisRun, 金丝雀, 蓝绿, 灰度发布, app actions, resource actions, 资源操作, 重启 Pod.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
 
@@ -142,6 +142,7 @@ if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi
 | 获取/get/查看详情 | `argocd app get` |
 | 历史/history | `argocd app history` |
 | 差异/diff | `argocd app diff` |
+| 资源 Action / 重启 / 执行操作 | `argocd app actions list/run` |
 | 登录/login | `argocd login` |
 | 项目/project | `argocd proj` |
 | 仓库/repo | `argocd repo` |

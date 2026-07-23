@@ -225,6 +225,7 @@ __marimo__/
 .claude/
 .trae/
 .pi/
+.pi-subagents/
 .codebuddy/
 
 # argocd_cli_gen output (when run from repo root)

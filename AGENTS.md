@@ -24,7 +24,7 @@ ArgoCD tutorial.
 
 ## Current state
 
-The repository is **v0.4.2+ (2026-07-02) — actively developed**.
+The repository is **v0.5.1 (2026-07-23) — actively developed**.
 The on-disk state is:
 
 ```
@@ -414,7 +414,7 @@ also run these argocd-specific checks:
    **强制规则**，不可省略。TODO.md 的迭代记录表（`## 📋 迭代记录`）也必须同步
    追加新行记录当前版本号与变更摘要。
 
-Report `[OK] argocd-skill v0.4.2 — N rounds clean` when round N
+Report `[OK] argocd-skill v0.5.1 — N rounds clean` when round N
 finds no new issues.
 
 ## Cross-skill delegation (provisional)

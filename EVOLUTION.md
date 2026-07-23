@@ -138,3 +138,4 @@ regression 回滚：`git revert <bad-commit> && git tag -d vX.Y.Z && git push or
 | 2026-07-02 | v0.4.0 | P3-优化层 P0：autofix（批量修复）+ impact（变更影响分析）。新增模块：autofix.py（11 测试）/ impact.py（5 测试）。SKILL.md 能力(13)(14)。TODO.md P3-1/P3-2 标记完成。|
 | 2026-07-02 | v0.4.1 | P3-3 批量操作：batch sync/rollback/refresh 并发执行。新增模块：batch.py（16 测试）。支持按 project/label/status 过滤，dry-run 模式，可配置并发数。|
 | 2026-07-02 | v0.4.2 | P3-4 配置模板（scaffold）：4-tier 模型快速生成 ArgoCD Application YAML + CLI 命令。新增模块：scaffold.py（31 测试）。SKILL.md 能力(15)。|
+| 2026-07-23 | v0.5.1 | argocd_api: delete-resource/delete 加 --yes 跳过确认；agent-protocols: .env↔config 同步 + gRPC 参数提取协议优化。|
