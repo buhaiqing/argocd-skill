@@ -11,6 +11,9 @@ Usage:
     python -m argocd_api sync <app>                  Trigger sync
     python -m argocd_api refresh <app>               Refresh app status
     python -m argocd_api manifests <app>             Get rendered manifests
+    python -m argocd_api diff <app>                  Show diff between live and target manifests
+    python -m argocd_api history <app>               Show sync history
+    python -m argocd_api logs <app> [--follow] [--tail N]  Get application logs
 
 Options:
     -h, --help               Show this message
@@ -26,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json as stdjson
-import os
 import sys
 from pathlib import Path
 
@@ -279,6 +281,41 @@ def cmd_manifests(client: ArgoCDClient, args: argparse.Namespace) -> int:
     return 0
 
 
+@traced(module="api", operation="diff", interface="api")
+def cmd_diff(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    diff = client.get_application_diff(args.app)
+    _pprint(diff, args.json)
+    return 0
+
+
+@traced(module="api", operation="history", interface="api")
+def cmd_history(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    history = client.get_application_history(args.app)
+    if not history:
+        print(f"[argocd-api] no sync history for '{args.app}'")
+        return 0
+    if args.json:
+        print(stdjson.dumps(history, indent=2, ensure_ascii=False))
+        return 0
+    print(f"{'ID':<6} {'REVISION':<12} {'STATUS':<12} {'DEPLOYED AT':<30}")
+    print("-" * 60)
+    for h in history:
+        hid = h.get("id", "")
+        rev = h.get("revision", "")
+        status = h.get("deployedAt", {}).get("status", "") or h.get("status", "")
+        deployed_at = h.get("deployedAt", {}).get("time", "") or h.get("deployedAt", "")
+        print(f"{hid:<6} {rev:<12} {status:<12} {deployed_at:<30}")
+    print(f"\nTotal: {len(history)} history entries")
+    return 0
+
+
+@traced(module="api", operation="logs", interface="api")
+def cmd_logs(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    logs = client.get_application_logs(args.app, follow=args.follow, tail=args.tail)
+    print(logs, end="")
+    return 0
+
+
 @traced(module="api", operation="create", interface="api")
 def cmd_create(client: ArgoCDClient, args: argparse.Namespace) -> int:
     import json as _json
@@ -467,6 +504,23 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("manifests", help="Get rendered manifests")
     p.add_argument("app")
     p.set_defaults(func=cmd_manifests)
+
+    # diff
+    p = sub.add_parser("diff", help="Show diff between live and target manifests")
+    p.add_argument("app")
+    p.set_defaults(func=cmd_diff)
+
+    # history
+    p = sub.add_parser("history", help="Show sync history")
+    p.add_argument("app")
+    p.set_defaults(func=cmd_history)
+
+    # logs
+    p = sub.add_parser("logs", help="Get application logs")
+    p.add_argument("app")
+    p.add_argument("--follow", action="store_true", help="Follow log output")
+    p.add_argument("--tail", type=int, default=100, help="Number of lines to show (default: 100)")
+    p.set_defaults(func=cmd_logs)
 
     # create
     p = sub.add_parser("create", help="Create application from JSON (file or stdin)")

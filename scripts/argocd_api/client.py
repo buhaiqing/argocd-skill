@@ -138,6 +138,27 @@ class ArgoCDClient:
         """Return events for an Application."""
         return self._get(f"/applications/{name}/events").json().get("items", [])
 
+    def get_application_diff(self, name: str) -> dict[str, Any]:
+        """Return diff between live and target manifests."""
+        return self._get(f"/applications/{name}/diff").json()
+
+    def get_application_history(self, name: str) -> list[dict[str, Any]]:
+        """Return sync history for an Application."""
+        return self._get(f"/applications/{name}/history").json().get("items", [])
+
+    def get_application_logs(
+        self,
+        name: str,
+        follow: bool = False,
+        tail: int = 100,
+    ) -> str:
+        """Return application logs (plain text, not JSON)."""
+        params: dict[str, str] = {
+            "follow": str(follow).lower(),
+            "tail": str(tail),
+        }
+        return self._get(f"/applications/{name}/logs", params=params).text
+
     # ------------------------------------------------------------------
     # Resource-level operations
     # ------------------------------------------------------------------

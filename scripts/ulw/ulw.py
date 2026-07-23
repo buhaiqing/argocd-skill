@@ -15,7 +15,6 @@ from pathlib import Path
 
 from .client import ArgoCDClient
 from .commands import delete_pod, find_pod
-from argocd_insight.trace.decorator import traced
 
 
 def _env_file(s: str) -> Path:
@@ -45,7 +44,6 @@ def _build_delete_parser(sub: argparse.ArgumentParser) -> None:
     )
 
 
-@traced(module="ulw", operation="find_pod", interface="cli")
 def _do_find_pod(client: ArgoCDClient, pod_name: str) -> int:
     """Find which ArgoCD App manages a Pod."""
     loc = find_pod(client, pod_name)
@@ -59,12 +57,11 @@ def _do_find_pod(client: ArgoCDClient, pod_name: str) -> int:
     return 1
 
 
-@traced(module="ulw", operation="delete_pod", interface="cli")
 def _do_delete_pod(client: ArgoCDClient, pod_name: str) -> int:
     """Delete a Pod via its managing ArgoCD App."""
     loc = find_pod(client, pod_name)
     if not loc:
-        print(f"[ulw] cannot delete: pod not found", file=sys.stderr)
+        print("[ulw] cannot delete: pod not found", file=sys.stderr)
         return 1
 
     # Safety: require explicit confirmation for delete-pod
