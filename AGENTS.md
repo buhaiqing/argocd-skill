@@ -24,46 +24,23 @@ ArgoCD tutorial.
 
 ## Current state
 
-The repository is **v0.5.2 (2026-07-23) — actively developed**.
-The on-disk state is:
+**v0.5.2 (2026-07-23) — actively developed.** No build/lint/CI by design.
+Tests via `pytest scripts/tests/`. The root `.gitignore` is the generic
+Python template; subdirs with scratch state (`scripts/`) own their own.
 
-```
-argocd-skill/
-├── SKILL.md                  entry point, bilingual, frontmatter trigger
-├── references/               15 docs
-│   ├── cli-installation.md
-│   ├── cli-commands.md
-│   ├── kustomize-mapping.md
-│   ├── kustomize-examples.md
-│   ├── batch-conversion-design.md
-│   ├── testing-guide.md
-│   ├── performance-guide.md
-│   ├── agent-protocols.md
-│   ├── argocd-app-lifecycle.md
-│   ├── argocd-appproject-guide.md
-│   ├── argocd-sync-policy-deep-dive.md
-│   ├── argocd-appset-guide.md
-│   ├── argocd-troubleshooting.md
-│   ├── argocd-insight-commands.md
-│   └── argocd-prompts.md
-├── scripts/                  Python tools + pytest tests (32 test files)
-│   ├── argocd_cli_gen/       YAML→CLI batch converter
-│   ├── argocd_api/           HTTP API CLI (bypasses argocd CLI bugs)
-│   ├── argocd_insight/       insight suite (diagnose/drift/health/cost/...)
-│   ├── argocd_deploy_stats/  deployment stats + OOS analyzer
-│   ├── ulw/                  ArgoCD ultra-workload via HTTP API
-│   ├── tests/                32 test files
-│   ├── requirements.txt      PyYAML>=6.0, pytest>=7.0
-│   └── README.md             tool usage manual
-├── LICENSE                   MIT, 2026, buhaiqing
-├── README.md                 repo overview
-└── AGENTS.md                 this file
-```
+## Ruff quality gate
 
-The root `.gitignore` is the generic Python template. Each subdir
-with Python scratch state (`scripts/`, and any future `tests/`)
-ships its own `.gitignore`. Do not move scratch-state ignores to
-the root — keep the root lean and let subdirs own their state.
+The repo ships Python code without a CI pipeline, so **every session
+must enforce Python quality manually** before committing:
+
+1. `ruff check scripts/ --exclude=.venv` — zero errors required.
+2. If errors found, run `ruff check --fix` first, then fix remaining
+   manually.
+3. Focus fixes on actual bugs (F821/F841/FBT) and readability (E741).
+   Stylistic rules (E501 line-length, T201 print) are guidelines—use
+   judgment based on context.
+4. `ruff check` output after `--fix` is the exit criterion. Silent
+   degradation (suppressing without understanding) is forbidden.
 
 ## What this repo is
 
@@ -489,88 +466,15 @@ When a second `argocd-*-ops` skill lands (e.g. `argocd-notification-ops`,
 
 > 本节记录可复用的工作模式，来自实际会话复盘（2025-07）。
 
-### 经验一：references 引用完整性检查
+### 检查命令速查
 
-**问题**：新增 references 文件后，容易遗漏在 SKILL.md 中的引用。
+| 检查 | 命令 | 时机 |
+|------|------|------|
+| references 引用完整性 | `for f in references/*.md; do bn=$(basename "$f"); grep -q "$bn" SKILL.md \|\| echo "❌ $bn"; done` | 新增/重命名 references 文件后 |
+| Token 效率 | 检查 SKILL.md：行数>450、重复内容、长代码块、重复附录编号 | 每次修改 SKILL.md |
+| 多文档联动 | 认证→SKILL+AGENTS+README；映射表→SKILL+references+mapper.py；4-tier→SKILL+parser.py | 修改前确认影响范围 |
 
-**检查命令**：
-```bash
-cd /path/to/argocd-skill
-for f in references/*.md; do bn=$(basename "$f"); if grep -q "$bn" SKILL.md; then echo "✅ $bn"; else echo "❌ $bn"; fi; done
-```
+### GCL 模式（文档大改时）
 
-**触发时机**：每次新增 / 重命名 references 文件后，必须执行此检查。
-
-### 经验二：Token Efficiency 定期检查
-
-**问题**：SKILL.md 是高频加载文件（每次会话都读），过大会浪费 tokens。
-
-**检查项**：
-| 检查项 | 阈值 | 触发条件 |
-|--------|------|---------|
-| 行数 | > 450 行 | 需要压缩 |
-| 重复内容 | 同一内容出现 > 2 次 | 合并/引用 |
-| 代码块 | 超过 5 行但可引用 references | 移到 references/ |
-| 附录编号 | 存在重复编号（如多个附录B） | 必须修复 |
-
-**执行方式**：GCL 模式（Generator 压缩 + Critic 验证）。
-
-### 经验三：多文档联动更新
-
-**原则**：一个变更可能影响多个文档，修改前先确认影响范围。
-
-| 变更类型 | 需要同步检查 |
-|---------|-------------|
-| 认证相关（凭证/优先级） | SKILL.md + AGENTS.md + README.md |
-| 错误提示规范 | SKILL.md 死法章节 + 附录A + AGENTS.md 用户提示规范章节 |
-| references 映射表 | SKILL.md 正文 + references/*.md + scripts/argocd_cli_gen/mapper.py |
-| 4-tier 模型 | SKILL.md + scripts/argocd_cli_gen/parser.py |
-
-### 经验四：附录编号规范
-
-**规则**：每个附录只能出现一次。修改前先用 `grep -n "^## 附录" SKILL.md` 检查是否有重复编号。
-
-**正确示例**：附录 A → B → C → D
-**错误示例**：附录 B 出现 3 次（历史上曾发生）
-
-### 经验五：错误提示规范同步
-
-**来源**：SKILL.md 死法的「用户友好提示」与 AGENTS.md 的「用户提示规范」应保持一致。
-
-**规则**：
-- SKILL.md 每个死法包含一行摘要 + 引用「详见附录 A」
-- AGENTS.md 包含完整的格式模板 + 图标规范 + 示例
-- 禁止在死法中硬编码完整提示（维护成本高）
-
-### 经验六：GCL 模式适用于文档优化
-
-**适用场景**：大幅重写（行数压缩 > 30%）、结构重构、多文件同步修改。
-
-**流程**：
-1. **Generator**：执行优化，写入临时文件
-2. **Critic**：验证 6 项检查（功能完整、引用 resolve、编号正确、关键约束保留、脱敏规则保留、frontmatter 完整）
-3. 通过后提交，否则循环（最多 3 轮）
-
+Generator 执行优化 → Critic 验证（功能完整/引用resolve/编号正确/关键约束保留/脱敏规则保留/frontmatter完整）→ 循环最多 3 轮。  
 Report `[OK] <file> vN — N rounds clean` when verification passes.
-
-### 经验七：CodeGraph 优先原则（代码理解铁律）
-
-**原则**：已索引仓库（存在 `.codegraph/` 目录）优先使用 CodeGraph，grep/Read/find 作为 Fallback。
-
-**执行顺序**：
-1. **先同步**：`codegraph sync [path]` 确保索引与磁盘一致
-2. **再查询**：`codegraph_explore`（MCP 工具）或 `codegraph explore`（CLI）
-3. **未同步文件**：查询结果出现 `⚠️ Some files referenced below were edited since the last index sync…` 时，直接用 `Read` 读取最新内容
-4. **无索引仓库**：跳过 CodeGraph，用常规工具
-
-**优势对比**：
-- CodeGraph：一次调用返回源码 + 调用链路 + 影响范围 (blast radius)
-- grep+Read：需要多轮调用，token 消耗高 60-80%
-- CodeGraph 对动态分发 (callback/JSX children) 的追踪比 grep 更准确
-
-**禁止事项**：
-- ❌ 不经 CodeGraph 直接 grep 大片代码
-- ❌ 对已知符号用 grep 替代 CodeGraph 探索
-- ❌ 主动运行 `codegraph init`（索引是用户决定）
-
-**触发条件**：任何涉及代码定位、理解调用链路、分析影响范围的场景。

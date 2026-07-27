@@ -1,5 +1,4 @@
 """Tests for insight_engine module (经验提炼引擎)."""
-import pytest
 from argocd_insight.insight_engine import extract_insights, Insight
 from argocd_insight.insight_engine.reasoning import build_reasoning_chain, infer_confidence
 

@@ -5,15 +5,12 @@ Tests the full chain: 采集 → 存储 → 查询 → 推送
 """
 from __future__ import annotations
 
-import json
 import unittest.mock
 from datetime import datetime, timezone
-from pathlib import Path
 
-import pytest
 
 from argocd_insight.snapshot_store import SnapshotStore
-from argocd_insight.trend import analyze_trend, compute_delta, format_trend_markdown
+from argocd_insight.trend import analyze_trend, format_trend_markdown
 from argocd_insight.config_compare import compare_applications, format_compare_markdown
 from argocd_insight.predict import predict_batch, format_predict_markdown
 from argocd_insight.report_composer import _summarize_module, _truncate_json_block

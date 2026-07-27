@@ -111,7 +111,6 @@ def detect_tier(manifest: dict) -> tuple[Tier, str]:
 
     src = spec.get("source") or {}
     revision = str(src.get("targetRevision", ""))
-    path = str(src.get("path", ""))
 
     if any(kw in revision for kw in OPS_REVISION_KEYWORDS):
         return Tier.OPS_APP, f"revision contains ops keyword ({revision})"

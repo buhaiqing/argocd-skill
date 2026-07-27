@@ -1,7 +1,6 @@
 """Tests for trace module (轨迹记录核心)."""
-import pytest
 from pathlib import Path
-from argocd_insight.trace.session import Session, get_session_id
+from argocd_insight.trace.session import Session
 from argocd_insight.trace.writer import TraceWriter
 
 
@@ -41,7 +40,6 @@ def test_traced_decorator(tmp_path, monkeypatch):
 def test_get_trace_dir_default(monkeypatch):
     """env 未设置时，默认为 <CWD>/.runtime/argocd-skill"""
     monkeypatch.delenv("ARGOCD_SKILL_RUNTIME_DIR", raising=False)
-    import os
     from argocd_insight.trace.decorator import get_trace_dir
 
     expected = Path.cwd() / ".runtime" / "argocd-skill"

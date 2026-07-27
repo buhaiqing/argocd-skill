@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .session import Session, get_session_id
+from .session import get_session_id
 from .writer import TraceWriter
 
 def get_trace_dir() -> Path:

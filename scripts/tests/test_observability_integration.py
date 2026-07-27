@@ -1,13 +1,10 @@
 """端到端测试：轨迹记录 → 分析 → 经验提炼。"""
-import pytest
 
 
 def test_trace_command_in_cli_help():
     """trace 子命令在帮助中出现。"""
-    from argocd_insight.cli import main as cli_main
     # 不实际运行 parser，验证 trace 模块可导入
     from argocd_insight.trace import traced, get_session_id
-    from argocd_insight.trace.session import Session
     assert callable(traced)
     assert callable(get_session_id)
 

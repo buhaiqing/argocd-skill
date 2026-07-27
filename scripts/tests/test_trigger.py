@@ -1,7 +1,6 @@
 """Tests for trigger module (P3.5-5~7 离线触发)."""
 import os
 import time
-from pathlib import Path
 
 import pytest
 

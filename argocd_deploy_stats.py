@@ -26,6 +26,6 @@ elif _name in _subcommands:
 else:
     _sub = "stats"
 
-import importlib
+import importlib  # noqa: E402  # noqa: E402
 _mod = importlib.import_module(f"scripts.argocd_deploy_stats.{_sub}")
 sys.exit(_mod.main())

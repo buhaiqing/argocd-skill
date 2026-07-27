@@ -17,7 +17,6 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
-from typing import Any
 
 # Supported operations
 OPERATIONS = {"sync", "rollback", "refresh"}

@@ -8,7 +8,6 @@ import json
 import subprocess
 from unittest.mock import patch
 
-import pytest
 
 from argocd_deploy_stats.oos_analyzer import (
     build_report,

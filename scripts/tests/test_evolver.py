@@ -1,6 +1,4 @@
 """Tests for evolver module (自进化写回器)."""
-import pytest
-from pathlib import Path
 from argocd_insight.evolver import evolve, RiskLevel
 from argocd_insight.evolver.validator import classify_risk, validate_write_back
 from argocd_insight.insight_engine import Insight

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 import pytest
 
 from argocd_insight.batch import (

@@ -22,9 +22,9 @@ from argocd_insight.scaffold import (
 
 def _cli_has_flag(cmd: str, flag: str, value: str | None = None) -> bool:
     """Normalise `` \\\n  `` wrapping and check if *flag* (optionally +*value*) exists."""
-    lines = [l.strip().rstrip("\\").strip() for l in cmd.split("\n")]
-    for i, l in enumerate(lines):
-        if l == flag:
+    lines = [line.strip().rstrip("\\").strip() for line in cmd.split("\n")]
+    for i, line in enumerate(lines):
+        if line == flag:
             if value is None:
                 return True
             if i + 1 < len(lines) and lines[i + 1] == value:
@@ -34,7 +34,7 @@ def _cli_has_flag(cmd: str, flag: str, value: str | None = None) -> bool:
 
 def _cli_startswith(cmd: str, prefix: str) -> bool:
     """Normalise wrapping and check if command starts with *prefix*."""
-    normalized = " ".join(l.strip().rstrip("\\").strip() for l in cmd.split("\n"))
+    normalized = " ".join(line.strip().rstrip("\\").strip() for line in cmd.split("\n"))
     return normalized.startswith(prefix)
 
 

@@ -4,15 +4,12 @@ No network calls — all argocd CLI invocations are mocked.
 """
 from __future__ import annotations
 
-from unittest.mock import patch
 
 from argocd_insight.drift import (
     AppSnapshot,
     detect_drift,
     _build_index,
     _compare,
-    DriftReport,
-    DriftEntry,
 )
 
 

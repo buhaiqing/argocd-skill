@@ -9,7 +9,6 @@ from argocd_insight.multi_cluster import (
     compare_clusters,
     _build_index,
     _compare_apps,
-    ComparisonReport,
 )
 
 

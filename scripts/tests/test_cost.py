@@ -8,7 +8,6 @@ from argocd_insight.cost import (
     parse_cpu,
     parse_memory,
     extract_resource_specs,
-    build_report,
 )
 
 

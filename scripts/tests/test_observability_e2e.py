@@ -17,7 +17,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 import tempfile
 import uuid
@@ -28,14 +27,12 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent.resolve()
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import argocd_insight
-from argocd_insight.analyzer import analyze_session, compute_stats, find_bottlenecks, classify_errors
-from argocd_insight.insight_engine import extract_insights, Insight
-from argocd_insight.evolver import evolve, classify_risk, validate_write_back, RiskLevel
-from argocd_insight.snapshot_store import SnapshotStore
-from argocd_insight.trigger.base import list_sessions, count_events, run_pipeline
-from argocd_insight.trace.decorator import get_trace_dir
-from argocd_insight.trace.writer import TraceWriter
+from argocd_insight.analyzer import analyze_session  # noqa: E402
+from argocd_insight.insight_engine import extract_insights  # noqa: E402
+from argocd_insight.evolver import evolve, classify_risk, validate_write_back, RiskLevel  # noqa: E402
+from argocd_insight.snapshot_store import SnapshotStore  # noqa: E402
+from argocd_insight.trigger.base import list_sessions, count_events, run_pipeline  # noqa: E402
+from argocd_insight.trace.writer import TraceWriter  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +51,7 @@ def build_test_events() -> list[dict]:
             "type": "cli_call",
             "module": "diagnose",
             "operation": "list_apps",
-            "command": f"argocd app list --project default --output json --concurrency 8",
+            "command": "argocd app list --project default --output json --concurrency 8",
             "start": (base + timedelta(seconds=i * 5)).isoformat(),
             "duration_ms": 150 + i * 10,
             "return_code": 0,
@@ -69,7 +66,7 @@ def build_test_events() -> list[dict]:
             "type": "cli_call",
             "module": "diagnose",
             "operation": "list_apps",
-            "command": f"argocd app list --project default --output json",
+            "command": "argocd app list --project default --output json",
             "start": (base + timedelta(seconds=i * 5)).isoformat(),
             "duration_ms": 800 + i * 50,  # 显著慢于 P95
             "return_code": 0,
@@ -84,7 +81,7 @@ def build_test_events() -> list[dict]:
             "type": "cli_call",
             "module": "batch",
             "operation": "sync",
-            "command": f"argocd app sync my-app --prune --sync-option PruneLast=true",
+            "command": "argocd app sync my-app --prune --sync-option PruneLast=true",
             "start": (base + timedelta(seconds=i * 3)).isoformat(),
             "duration_ms": 200 + i * 5,
             "return_code": 0,
@@ -413,11 +410,11 @@ def step8_traced_decorator(tmp_root: Path):
 
         # 验证轨迹内容
         content = trace_files[0].read_text(encoding="utf-8")
-        lines = [json.loads(l) for l in content.strip().split("\n") if l.strip()]
+        lines = [json.loads(line) for line in content.strip().split("\n") if line.strip()]
         assert_equal(len(lines), 1, "写入 1 条轨迹事件")
         assert_equal(lines[0]["module"], "test_module", "module 字段正确")
         assert_equal(lines[0]["operation"], "test_op", "operation 字段正确")
-        print(f"  ✓ 轨迹内容正确: module=test_module, operation=test_op")
+        print("  ✓ 轨迹内容正确: module=test_module, operation=test_op")
 
     finally:
         if old_env is None:

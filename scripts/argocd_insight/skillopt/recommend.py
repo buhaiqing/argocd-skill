@@ -1,6 +1,7 @@
 """参数推荐。"""
 from __future__ import annotations
-from .adapter import RecommendedParams
+from typing import Optional
+from .adapter import RecommendedParams, SkillOptAdapter
 
 PARAM_DEFAULTS = {
     "diagnose": {"concurrency": 8, "timeout": 60, "severity": ""},
@@ -17,11 +18,10 @@ PARAM_DEFAULTS = {
 class ParameterRecommender:
     """参数推荐器。"""
 
-    _adapter: "SkillOptAdapter | None" = None
+    _adapter: Optional[SkillOptAdapter] = None
 
     def _get_adapter(self):
         if ParameterRecommender._adapter is None:
-            from .adapter import SkillOptAdapter
             ParameterRecommender._adapter = SkillOptAdapter()
         return ParameterRecommender._adapter
 

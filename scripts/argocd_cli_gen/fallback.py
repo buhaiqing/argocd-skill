@@ -13,7 +13,6 @@ from pathlib import Path
 
 import yaml
 
-from .mapper import UnsupportedField
 from .parser import LoadedManifest, Tier
 
 

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 
 SAFE_NAME_TRANSLATION = str.maketrans({"_": "-"})

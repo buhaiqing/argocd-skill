@@ -4,10 +4,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from argocd_insight.report_composer import (
-    MODULES,
     _capture_json,
     _compose_json,
     _compose_markdown,

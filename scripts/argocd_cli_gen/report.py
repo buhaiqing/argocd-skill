@@ -7,8 +7,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .fallback import FallbackBundle, FallbackEntry
-from .mapper import MappedApp, UnsupportedField
+from .fallback import FallbackBundle
+from .mapper import MappedApp
 from .parser import LoadedManifest, Tier
 
 
@@ -40,7 +40,7 @@ class Report:
 
     def to_markdown(self) -> str:
         lines: list[str] = []
-        lines.append(f"# argocd-cli-gen 转换报告")
+        lines.append("# argocd-cli-gen 转换报告")
         lines.append("")
         lines.append(f"- **生成时间：** {self.timestamp}")
         lines.append(f"- **输入目录：** `{self.input_dir}`")

@@ -5,10 +5,8 @@ No network calls — all subprocess interactions are mocked.
 from __future__ import annotations
 
 import json
-import subprocess
 from unittest.mock import patch
 
-import pytest
 
 from argocd_insight.compliance import (
     build_report,

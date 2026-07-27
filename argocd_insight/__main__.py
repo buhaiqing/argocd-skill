@@ -10,6 +10,6 @@ _scripts_root = Path(__file__).parent.parent
 if str(_scripts_root) not in sys.path:
     sys.path.insert(0, str(_scripts_root))
 
-from scripts.argocd_insight.cli import main
+from scripts.argocd_insight.cli import main  # noqa: E402
 
 raise SystemExit(main())

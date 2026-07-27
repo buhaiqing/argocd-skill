@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 
@@ -91,5 +90,5 @@ class TestSnapshotStore:
 
     def test_store_dir_created(self, store_dir):
         new_dir = store_dir / "nested" / "store"
-        s = SnapshotStore(new_dir)
+        SnapshotStore(new_dir)
         assert new_dir.exists()

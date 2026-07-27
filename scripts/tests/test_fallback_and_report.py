@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from argocd_cli_gen import fallback, parser, report, renderer
-from argocd_cli_gen.parser import LoadedManifest, Tier
+from argocd_cli_gen.parser import LoadedManifest
 from argocd_cli_gen.renderer import RenderOptions
 
 
