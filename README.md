@@ -6,7 +6,7 @@
 > already committed in `2866fbe`. This repo adds `AGENTS.md`
 > (AI-Agent guidance) and tracks a bilingual README on top.
 
-ArgoCD CLI 全流程技能 — 一站式覆盖 argocd CLI 安装、自然语言生成 CLI
+ArgoCD CLI 全流程技能 — 一站式覆盖 argocd CLI 安装，自然语言生成 CLI
 命令、Application YAML 反向生成可执行 shell 脚本。
 
 > A one-stop AI Agent skill for the ArgoCD CLI: install
@@ -48,7 +48,9 @@ argocd-skill/
 │   ├── argocd-appproject-guide.md
 │   ├── argocd-sync-policy-deep-dive.md
 │   ├── argocd-appset-guide.md
+│   ├── cheat-sheet.md         ← 一页速查（高频操作 + 常见错误）
 │   └── argocd-troubleshooting.md
+├── pyproject.toml             ← Python 包入口（pip install -e . 后可用 argocd-cli-gen 等命令）
 └── scripts/                   argocd_cli_gen 批量转换工具 + pytest 套件
     ├── argocd_cli_gen/        python -m argocd_cli_gen
     ├── tests/                 单元 + 集成测试
@@ -71,6 +73,10 @@ curl -sSL -o /usr/local/bin/argocd \
   https://github.com/argoproj/argo-cd/releases/download/v3.4.2/argocd-linux-amd64
 chmod +x /usr/local/bin/argocd
 argocd version --client
+
+# 安装 Python 工具（可选，pip install -e . 后可直接调用命令，无需 python -m 前缀）
+pip install -e .
+argocd-insight --help          # 验证安装成功
 ```
 
 ### 2. 配置认证 (Configure credentials)
@@ -115,7 +121,7 @@ export ARGOCD_SERVER="argocd.hd123.com"
 基于真实生产环境 97 个 YAML 样本统计（argoapp 仓库）：
 
 | 层级 | 占比 | 命名 | namespace | 关键约束 |
-|---|---:|---|---|---|
+|---|---|---|---|---|
 | 基础设施 Root | <1% | `projects.yaml`、`repos.yaml`、`initns/namespace.yaml` | `argo-root` | 自启动初始化 |
 | 聚合入口 Root | 5% | `{project}-{profile}-{git_branch}.yaml` | `argo-root` | 必含 `automated.prune+selfHeal` |
 | 业务应用 | 76% | `{stack}-{app}.yaml` | 业务命名空间 | labels 四件套；**不开 automated** |
@@ -159,10 +165,11 @@ bash run_all.sh                       # 正式下发
 ## 依赖 (Dependencies)
 
 - `argocd` CLI v2.x — [安装指引](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
-- Python >= 3.8（仅 `scripts/argocd_cli_gen` 需要）
-- `PyYAML >= 6.0`、`pytest >= 7.0`（仅测试）
+- Python >= 3.10（所有 Python 工具均需此版本）
+- `PyYAML >= 6.0`、`requests >= 2.28`（运行所需）
+- `pytest >= 7.0`（仅测试）
+- 安装方式：`pip install -e .`（自动安装所有依赖并注册命令入口）
 
 ## 许可 (License)
 
 MIT — see [LICENSE](./LICENSE).
-

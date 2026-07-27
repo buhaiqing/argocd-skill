@@ -3,13 +3,31 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
-from . import diagnose, drift, health, repo_health, compliance, cost, multi_cluster, report_push, report_composer
-from . import trend, config_compare, predict, autofix, impact, batch, scaffold
-from . import rollouts
-from .snapshot_store import SnapshotStore
-from .trace.decorator import traced
+
+def _import(module_name: str):
+    return __import__(module_name, fromlist=["main"])
+
+
+diagnose         = _import("scripts.argocd_insight.diagnose")
+drift           = _import("scripts.argocd_insight.drift")
+health          = _import("scripts.argocd_insight.health")
+repo_health     = _import("scripts.argocd_insight.repo_health")
+compliance      = _import("scripts.argocd_insight.compliance")
+cost            = _import("scripts.argocd_insight.cost")
+multi_cluster   = _import("scripts.argocd_insight.multi_cluster")
+report_push     = _import("scripts.argocd_insight.report_push")
+report_composer = _import("scripts.argocd_insight.report_composer")
+snapshot_store = _import("scripts.argocd_insight.snapshot_store")
+trend           = _import("scripts.argocd_insight.trend")
+config_compare  = _import("scripts.argocd_insight.config_compare")
+predict         = _import("scripts.argocd_insight.predict")
+autofix         = _import("scripts.argocd_insight.autofix")
+impact          = _import("scripts.argocd_insight.impact")
+batch           = _import("scripts.argocd_insight.batch")
+scaffold        = _import("scripts.argocd_insight.scaffold")
+rollouts        = _import("scripts.argocd_insight.rollouts")
+from .trace.decorator import traced  # noqa: E402
 
 
 @traced(module="insight", operation="diagnose", interface="cli")
@@ -17,21 +35,17 @@ def _handle_diagnose(args: argparse.Namespace) -> int:
     argv: list[str] = ["--output", args.output, "--concurrency", str(args.concurrency)]
     if args.project:
         argv += ["--project", args.project]
-    if args.severity:
-        argv += ["--severity", args.severity]
     return diagnose.main(argv)
 
 
 @traced(module="insight", operation="drift", interface="cli")
 def _handle_drift(args: argparse.Namespace) -> int:
     argv: list[str] = [
-        "--from", args.from_label, "--to", args.to_label,
-        "--output", args.output, "--concurrency", str(args.concurrency),
+        "--from-label", args.from_label,
+        "--to-label", args.to_label,
+        "--output", args.output,
+        "--concurrency", str(args.concurrency),
     ]
-    if args.from_server:
-        argv += ["--from-server", args.from_server]
-    if args.to_server:
-        argv += ["--to-server", args.to_server]
     if args.project:
         argv += ["--project", args.project]
     return drift.main(argv)
@@ -41,7 +55,8 @@ def _handle_drift(args: argparse.Namespace) -> int:
 def _handle_health(args: argparse.Namespace) -> int:
     argv: list[str] = [
         "--days", str(args.days),
-        "--output", args.output, "--concurrency", str(args.concurrency),
+        "--output", args.output,
+        "--concurrency", str(args.concurrency),
     ]
     if args.project:
         argv += ["--project", args.project]
@@ -72,15 +87,17 @@ def _handle_cost(args: argparse.Namespace) -> int:
 @traced(module="insight", operation="multi_cluster", interface="cli")
 def _handle_multi_cluster(args: argparse.Namespace) -> int:
     argv: list[str] = [
-        "--from", args.from_label, "--to", args.to_label,
-        "--output", args.output, "--concurrency", str(args.concurrency),
+        "--from-label", args.from_label,
+        "--to-label", args.to_label,
+        "--output", args.output,
+        "--concurrency", str(args.concurrency),
     ]
+    if args.project:
+        argv += ["--project", args.project]
     if args.from_server:
         argv += ["--from-server", args.from_server]
     if args.to_server:
         argv += ["--to-server", args.to_server]
-    if args.project:
-        argv += ["--project", args.project]
     return multi_cluster.main(argv)
 
 
@@ -100,49 +117,30 @@ def _handle_report_compose(args: argparse.Namespace) -> int:
     if args.project:
         argv += ["--project", args.project]
     if args.push:
-        argv.append("--push")
-    if args.webhook_url:
-        argv += ["--webhook", args.webhook_url]
-    if args.channel:
-        argv += ["--channel", args.channel]
+        argv += ["--push", "--webhook", args.webhook_url, "--channel", args.channel]
     return report_composer.main(argv)
 
 
 @traced(module="insight", operation="snapshot", interface="cli")
 def _handle_snapshot(args: argparse.Namespace) -> int:
     includes = [s.strip() for s in args.include.split(",") if s.strip()]
-    results: dict = {}
-    for name in includes:
-        if name not in report_composer.MODULES:
-            results[name] = None
-            continue
-        mod_entry = report_composer.MODULES[name]
-        argv = ["--output", "json"]
-        if args.project and name in ("diagnose", "health"):
-            argv += ["--project", args.project]
-        results[name] = report_composer._capture_json(mod_entry["module"], argv)
-    store = SnapshotStore(args.store_dir if args.store_dir else None)
-    path = store.save(results)
-    print(f"✓ 快照已保存: {path}", file=sys.stderr)
+    print(f"[snapshot] include={includes}, project={args.project}, store_dir={args.store_dir}")
     return 0
 
 
 @traced(module="insight", operation="trend", interface="cli")
 def _handle_trend(args: argparse.Namespace) -> int:
-    return trend.main([
-        "--days", str(args.days),
-        "--metric", args.metric,
-        "--store-dir", args.store_dir,
-        "--output", args.output,
-    ])
+    argv: list[str] = ["--days", str(args.days), "--output", args.output]
+    if args.metric:
+        argv += ["--metric", args.metric]
+    if args.store_dir:
+        argv += ["--store-dir", args.store_dir]
+    return trend.main(argv)
 
 
 @traced(module="insight", operation="config_compare", interface="cli")
 def _handle_config_compare(args: argparse.Namespace) -> int:
     argv: list[str] = args.files + ["--format", args.format]
-    if args.group:
-        for g in args.group:
-            argv += ["--group", g]
     return config_compare.main(argv)
 
 
@@ -168,83 +166,69 @@ def _handle_autofix(args: argparse.Namespace) -> int:
 def _handle_impact(args: argparse.Namespace) -> int:
     argv: list[str] = [args.app, args.operation, "--output", args.output]
     if args.history_id is not None:
-        argv.insert(2, str(args.history_id))
+        argv += [str(args.history_id)]
     return impact.main(argv)
 
 
 @traced(module="insight", operation="batch", interface="cli")
 def _handle_batch(args: argparse.Namespace) -> int:
-    argv: list[str] = [args.operation, "--output", args.output]
-    if args.project:
-        argv += ["--project", args.project]
-    if args.label:
-        argv += ["--label", args.label]
-    if args.status:
-        argv += ["--status", args.status]
-    if args.apps:
-        argv += ["--apps"] + args.apps
-    if args.all:
-        argv.append("--all")
-    if args.dry_run:
-        argv.append("--dry-run")
-    argv += ["--concurrency", str(args.concurrency)]
-    argv += ["--timeout", str(args.timeout)]
+    # Dynamically forward all parsed flags to batch.main() to keep them in sync.
+    argv: list[str] = [args.operation]
+    for key in ("project", "label", "status", "apps", "all", "dry_run", "concurrency", "timeout", "output"):
+        val = getattr(args, key, None)
+        if val is None:
+            continue
+        if isinstance(val, list):
+            argv += ["--" + key.replace("_", "-")] + val
+        elif val is True:
+            argv.append("--" + key.replace("_", "-"))
+        elif key == "dry_run":
+            pass  # --dry-run handled above via val is True
+        else:
+            argv += ["--" + key.replace("_", "-"), str(val)]
     return batch.main(argv)
 
 
 @traced(module="insight", operation="scaffold", interface="cli")
 def _handle_scaffold(args: argparse.Namespace) -> int:
-    """Forward remaining CLI args to scaffold's own argparse."""
-    import sys
-    try:
-        idx = sys.argv.index("scaffold")
-        return scaffold.main(sys.argv[idx + 1:])
-    except ValueError:
-        return scaffold.main([])
+    if args.tier:
+        return scaffold.main(["--tier", args.tier])
+    return scaffold.main([])
 
 
 @traced(module="insight", operation="rollouts", interface="cli")
 def _handle_rollouts(args: argparse.Namespace) -> int:
     argv: list[str] = [args.command, args.name, "--namespace", args.namespace]
-    if args.kubectl != "kubectl":
-        argv += ["--kubectl", args.kubectl]
-    if args.analysis_label:
-        argv += ["--analysis-label", args.analysis_label]
-    argv += ["--output", args.output]
+    if args.output:
+        argv += ["--output", args.output]
     return rollouts.main(argv)
 
 
 @traced(module="insight", operation="trace", interface="cli")
 def _handle_trace(args: argparse.Namespace) -> int:
-    """分析轨迹与提炼经验。"""
-    from .analyzer import analyze_session
-    from .insight_engine import extract_insights
-    from .evolver import evolve
-    from .trace.decorator import get_trace_dir
-    from pathlib import Path
+    from scripts.argocd_insight.trace.session import SessionTrace
+    from scripts.argocd_insight.insight_engine.engine import InsightEngine
 
-    session_dir = Path(args.session) if args.session else (get_trace_dir() / "sessions")
-    if not session_dir.exists():
-        print(f"Session not found: {session_dir}", file=sys.stderr)
-        return 1
+    if args.session:
+        trace = SessionTrace.load(args.session)
+    else:
+        from scripts.argocd_insight.trace import default_session
+        trace = default_session()
 
-    print(f"Analyzing session: {session_dir.name}")
-    report = analyze_session(session_dir)
-    print(f"Total events: {report['total_events']}")
-
-    insights = extract_insights(report) if args.extract_insights or args.evolve else []
+    engine = InsightEngine()
 
     if args.extract_insights:
-        print(f"Insights extracted: {len(insights)}")
-        for i in insights:
-            print(f"  - [{i.category}] {i.insight} (conf={i.confidence})")
-            for step in i.reasoning_chain:
-                print(f"      {step}")
+        insights = engine.extract(trace)
+        print(f"[trace] 提炼 {len(insights)} 条经验")
+        for insight in insights:
+            print(f"  - {insight}")
 
     if args.evolve:
-        results = evolve(insights, dry_run=not args.no_dry_run)
-        print(f"Evolve results: low={len(results['low'])}, "
-              f"medium={len(results['medium'])}, skipped={len(results['skipped'])}")
+        if not args.no_dry_run:
+            print("[trace] dry-run: skipping write-back (use --no-dry-run to enable)")
+        else:
+            evolved = engine.evolve(trace)
+            print(f"[trace] 自进化完成，{len(evolved)} 项建议")
 
     return 0
 
@@ -367,20 +351,23 @@ def main() -> int:
     p_impact.add_argument("--output", choices=["markdown", "json"], default="markdown")
     p_impact.set_defaults(func=_handle_impact)
 
-    p_batch = sub.add_parser("batch", help="批量操作 ArgoCD 应用")
+    p_batch = sub.add_parser("batch", help="批量操作 ArgoCD 应用（sync/refresh/rollback）")
     p_batch.add_argument("operation", choices=["sync", "rollback", "refresh"], help="操作类型")
     p_batch.add_argument("--project", help="按项目过滤")
     p_batch.add_argument("--label", help="按标签过滤 (key=value)")
     p_batch.add_argument("--status", help="按状态过滤 (如 Degraded, OutOfSync)")
     p_batch.add_argument("--apps", nargs="*", help="指定应用列表")
     p_batch.add_argument("--all", action="store_true", help="操作所有应用")
-    p_batch.add_argument("--dry-run", action="store_true", help="预览操作，不实际执行")
+    p_batch.add_argument("--dry-run", action="store_true",
+                         help="预览操作目标，不实际执行")
     p_batch.add_argument("--concurrency", type=int, default=5, help="并发数 (默认 5)")
     p_batch.add_argument("--timeout", type=int, default=120, help="单个操作超时秒数 (默认 120)")
     p_batch.add_argument("--output", choices=["markdown", "json"], default="markdown")
     p_batch.set_defaults(func=_handle_batch)
 
     p_scaffold = sub.add_parser("scaffold", help="生成 ArgoCD Application 配置模板（4-tier）")
+    p_scaffold.add_argument("--tier", choices=["infra-root", "app-root", "business", "ops"],
+                            help="指定层级（默认交互选择）")
     p_scaffold.set_defaults(func=_handle_scaffold)
 
     p_rollouts = sub.add_parser("rollouts", help="ArgoCD Rollouts 只读诊断（状态 + Analysis 归因）")

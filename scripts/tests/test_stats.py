@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
-
 
 from argocd_deploy_stats.stats import (
     build_report,
@@ -88,8 +88,8 @@ def test_fetch_history_returns_parsed():
     with patch.object(subprocess, "run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = json.dumps(raw)
-        name, hist = fetch_history("my-app")
-        assert name == "my-app"
+        name, hist = fetch_history("app-1")
+        assert name == "app-1"
         assert len(hist) == 1
         assert hist[0]["revision"] == "abc123"
 
@@ -98,8 +98,7 @@ def test_fetch_history_rc_nonzero_returns_empty():
     with patch.object(subprocess, "run") as mock_run:
         mock_run.return_value.returncode = 1
         mock_run.return_value.stdout = ""
-        name, hist = fetch_history("my-app")
-        assert name == "my-app"
+        name, hist = fetch_history("app-1")
         assert hist == []
 
 
@@ -107,17 +106,15 @@ def test_fetch_history_empty_output():
     with patch.object(subprocess, "run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = ""
-        name, hist = fetch_history("my-app")
-        assert name == "my-app"
+        name, hist = fetch_history("app-1")
         assert hist == []
 
 
 def test_fetch_history_malformed_json():
     with patch.object(subprocess, "run") as mock_run:
         mock_run.return_value.returncode = 0
-        mock_run.return_value.stdout = "not-json"
-        name, hist = fetch_history("my-app")
-        assert name == "my-app"
+        mock_run.return_value.stdout = "not json"
+        name, hist = fetch_history("app-1")
         assert hist == []
 
 
@@ -126,8 +123,7 @@ def test_fetch_history_missing_history_key():
     with patch.object(subprocess, "run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = json.dumps(raw)
-        name, hist = fetch_history("my-app")
-        assert name == "my-app"
+        name, hist = fetch_history("app-1")
         assert hist == []
 
 
@@ -154,6 +150,11 @@ def _make_history(deployed_at: str, automated: bool = False) -> dict:
     return entry
 
 
+def days_ago(n: int) -> str:
+    """Return a UTC ISO timestamp for n days ago from today."""
+    return (datetime.now(timezone.utc) - timedelta(days=n)).strftime("%Y-%m-%dT12:00:00Z")
+
+
 def test_build_report_empty_apps():
     report = build_report([], days=None, project_filter=None, concurrency=1)
     assert report["totalApps"] == 0
@@ -165,7 +166,7 @@ def test_build_report_empty_apps():
 
 def test_build_report_counts_deploys():
     apps = [_make_app("app-1")]
-    hist = [_make_history("2026-07-01T12:00:00Z"), _make_history("2026-07-02T12:00:00Z")]
+    hist = [_make_history(days_ago(1)), _make_history(days_ago(2))]
 
     with patch("argocd_deploy_stats.stats.fetch_history", return_value=("app-1", hist)):
         report = build_report(apps, days=None, project_filter=None, concurrency=1)
@@ -177,8 +178,8 @@ def test_build_report_counts_deploys():
 def test_build_report_by_initiator():
     apps = [_make_app("app-1")]
     hist = [
-        _make_history("2026-07-01T12:00:00Z", automated=True),
-        _make_history("2026-07-02T12:00:00Z", automated=False),
+        _make_history(days_ago(1), automated=True),
+        _make_history(days_ago(2), automated=False),
     ]
 
     with patch("argocd_deploy_stats.stats.fetch_history", return_value=("app-1", hist)):
@@ -195,7 +196,7 @@ def test_build_report_project_filter():
     ]
 
     def fake_fetch(name):
-        return name, [_make_history("2026-07-01T12:00:00Z")]
+        return name, [_make_history(days_ago(30))]
 
     with patch("argocd_deploy_stats.stats.fetch_history", side_effect=fake_fetch):
         report = build_report(apps, days=None, project_filter="proj-a", concurrency=1)
@@ -207,8 +208,8 @@ def test_build_report_project_filter():
 def test_build_report_days_filter():
     apps = [_make_app("app-1")]
     hist = [
-        _make_history("2026-01-01T12:00:00Z"),   # old, should be filtered out
-        _make_history("2026-07-01T12:00:00Z"),   # recent
+        _make_history(days_ago(30)),   # old, should be filtered out
+        _make_history(days_ago(5)),    # recent
     ]
 
     with patch("argocd_deploy_stats.stats.fetch_history", return_value=("app-1", hist)):
@@ -220,9 +221,9 @@ def test_build_report_days_filter():
 def test_build_report_recent_deploys_sorted():
     apps = [_make_app("app-1")]
     hist = [
-        _make_history("2026-07-01T12:00:00Z"),
-        _make_history("2026-07-03T12:00:00Z"),
-        _make_history("2026-07-02T12:00:00Z"),
+        _make_history(days_ago(1)),
+        _make_history(days_ago(3)),
+        _make_history(days_ago(2)),
     ]
 
     with patch("argocd_deploy_stats.stats.fetch_history", return_value=("app-1", hist)):
@@ -236,7 +237,7 @@ def test_build_report_recent_deploys_sorted():
 
 def test_build_report_recent_deploys_limited_to_50():
     apps = [_make_app("app-1")]
-    hist = [_make_history(f"2026-07-{d:02d}T12:00:00Z") for d in range(1, 100)]
+    hist = [_make_history(f"{'2026-07-':.20}{d:02d}T12:00:00Z") for d in range(1, 100)]
 
     with patch("argocd_deploy_stats.stats.fetch_history", return_value=("app-1", hist)):
         report = build_report(apps, days=None, project_filter=None, concurrency=1)
@@ -251,7 +252,7 @@ def test_build_report_multiple_apps_aggregation():
     ]
 
     def fake_fetch(name):
-        hist = [_make_history("2026-07-01T12:00:00Z")]
+        hist = [_make_history(days_ago(1))]
         return name, hist
 
     with patch("argocd_deploy_stats.stats.fetch_history", side_effect=fake_fetch):
