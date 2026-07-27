@@ -552,3 +552,25 @@ for f in references/*.md; do bn=$(basename "$f"); if grep -q "$bn" SKILL.md; the
 3. 通过后提交，否则循环（最多 3 轮）
 
 Report `[OK] <file> vN — N rounds clean` when verification passes.
+
+### 经验七：CodeGraph 优先原则（代码理解铁律）
+
+**原则**：已索引仓库（存在 `.codegraph/` 目录）优先使用 CodeGraph，grep/Read/find 作为 Fallback。
+
+**执行顺序**：
+1. **先同步**：`codegraph sync [path]` 确保索引与磁盘一致
+2. **再查询**：`codegraph_explore`（MCP 工具）或 `codegraph explore`（CLI）
+3. **未同步文件**：查询结果出现 `⚠️ Some files referenced below were edited since the last index sync…` 时，直接用 `Read` 读取最新内容
+4. **无索引仓库**：跳过 CodeGraph，用常规工具
+
+**优势对比**：
+- CodeGraph：一次调用返回源码 + 调用链路 + 影响范围 (blast radius)
+- grep+Read：需要多轮调用，token 消耗高 60-80%
+- CodeGraph 对动态分发 (callback/JSX children) 的追踪比 grep 更准确
+
+**禁止事项**：
+- ❌ 不经 CodeGraph 直接 grep 大片代码
+- ❌ 对已知符号用 grep 替代 CodeGraph 探索
+- ❌ 主动运行 `codegraph init`（索引是用户决定）
+
+**触发条件**：任何涉及代码定位、理解调用链路、分析影响范围的场景。
