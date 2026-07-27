@@ -42,10 +42,13 @@ class ArgoCDClient:
         """Auto-configure from environment / .env / argocd config.
 
         Auth priority:
-          1. ARGOCD_AUTH_TOKEN (shell env)
-          2. ~/.config/argocd/config  (local config YAML)
-          3. .env file → ARGOCD_USERNAME + ARGOCD_PASSWORD → API login
-          4. .env file → ARGOCD_AUTH_TOKEN
+          1. ARGOCD_AUTH_TOKEN (shell env) — 优先使用环境变量中的 token
+          2. ~/.config/argocd/config  (local config YAML) — 尝试本地配置的 token
+          3. .env file → ARGOCD_USERNAME + ARGOCD_PASSWORD → API login — 用户名密码登录
+
+        Token 过期自动回退机制:
+          - 当从 config 获取的 token 过期时，自动回退到 username+password 登录
+          - 避免因 token 过期导致操作失败
         """
         if env_path:
             _load_dotenv(env_path)
@@ -55,30 +58,68 @@ class ArgoCDClient:
             raise ValueError("ARGOCD_SERVER is not set")
 
         ssl_verify = os.environ.get("ARGOCD_SSL_VERIFY", "1") != "0"
+
+        # Priority 1: shell env ARGOCD_AUTH_TOKEN
         token = os.environ.get("ARGOCD_AUTH_TOKEN") or None
+        if token:
+            # 验证 token 是否有效
+            client = cls(server=server, token=token, ssl_verify=ssl_verify)
+            if cls._validate_token(client):
+                print("[argocd-api] using token from shell env", file=sys.stderr)
+                return client
+            # token 无效，继续尝试下一优先级
+            print("[argocd-api] shell env token expired, trying next priority...", file=sys.stderr)
+            token = None
 
-        client = cls(server=server, token=token, ssl_verify=ssl_verify)
-
-        # Priority 2: try local config file
-        if not token:
-            token = _token_from_argocd_config(server)
-            if token:
+        # Priority 2: ~/.config/argocd/config
+        token = _token_from_argocd_config(server)
+        if token:
+            client = cls(server=server, token=token, ssl_verify=ssl_verify)
+            if cls._validate_token(client):
                 print("[argocd-api] using token from ~/.config/argocd/config", file=sys.stderr)
+                return client
+            # token 无效，自动回退到 username+password 登录
+            print("[argocd-api] config token expired, auto-fallback to username+password...", file=sys.stderr)
+            token = None
 
-        # Priority 3: username + password → API login
-        if not token:
-            username = os.environ.get("ARGOCD_USERNAME") or ""
-            password = os.environ.get("ARGOCD_PASSWORD") or ""
-            if username and password:
+        # Priority 3: .env file → ARGOCD_USERNAME + ARGOCD_PASSWORD → API login
+        username = os.environ.get("ARGOCD_USERNAME") or ""
+        password = os.environ.get("ARGOCD_PASSWORD") or ""
+        if username and password:
+            client = cls(server=server, token=None, ssl_verify=ssl_verify)
+            try:
                 token = client.login(username, password)
+                client.token = token
                 print(f"[argocd-api] token obtained for {username}", file=sys.stderr)
+                return client
+            except RuntimeError as e:
+                print(f"[argocd-api] login failed: {e}", file=sys.stderr)
 
-        if not token:
-            raise ValueError(
-                "No ArgoCD credentials found. "
-                "Set ARGOCD_AUTH_TOKEN, or ARGOCD_USERNAME+ARGOCD_PASSWORD, "
-                "or configure ~/.config/argocd/config"
-            )
+        # Priority 4: .env file → ARGOCD_AUTH_TOKEN
+        token = os.environ.get("ARGOCD_AUTH_TOKEN") or None
+        if token:
+            client = cls(server=server, token=token, ssl_verify=ssl_verify)
+            if cls._validate_token(client):
+                print("[argocd-api] using token from .env file", file=sys.stderr)
+                return client
+
+        raise ValueError(
+            "No valid ArgoCD credentials found. "
+            "Set ARGOCD_AUTH_TOKEN, or ARGOCD_USERNAME+ARGOCD_PASSWORD, "
+            "or configure ~/.config/argocd/config"
+        )
+
+    @classmethod
+    def _validate_token(cls, client: "ArgoCDClient") -> bool:
+        """验证 token 是否有效（通过调用 whoami API）"""
+        try:
+            client._get("/account")
+            return True
+        except RuntimeError as e:
+            if "401" in str(e) or "expired" in str(e) or "Unauthenticated" in str(e):
+                return False
+            # 其他错误（如网络问题）也返回 True，让实际操作时再报错
+            return True
 
         client.token = token
         return client

@@ -28,6 +28,7 @@ Options:
 from __future__ import annotations
 
 import argparse
+import os
 import json as stdjson
 import sys
 from pathlib import Path
@@ -574,7 +575,6 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_repos)
 
     args = parser.parse_args(argv)
-
     # Load .env before client
     if args.env_file and args.env_file.is_file():
         try:
@@ -586,7 +586,24 @@ def main(argv: list[str] | None = None) -> int:
     try:
         client = ArgoCDClient.from_env()
     except ValueError as exc:
-        print(f"[argocd-api] configuration error: {exc}", file=sys.stderr)
+        # 提供更清晰的错误引导
+        server = os.environ.get("ARGOCD_SERVER", "<未配置>")
+        print(f"❌ ArgoCD 连接失败: {exc}", file=sys.stderr)
+        print(file=sys.stderr)
+        print("📋 解决方案:", file=sys.stderr)
+        print(file=sys.stderr)
+        print("方式1: 配置用户名密码登录（推荐）", file=sys.stderr)
+        print(f"   export ARGOCD_SERVER=\"{server}\"", file=sys.stderr)
+        print(f"   export ARGOCD_USERNAME=\"你的用户名\"", file=sys.stderr)
+        print(f"   export ARGOCD_PASSWORD=\"你的密码\"", file=sys.stderr)
+        print(file=sys.stderr)
+        print("方式2: 使用有效的 Token", file=sys.stderr)
+        print(f"   export ARGOCD_AUTH_TOKEN=\"<有效token>\"", file=sys.stderr)
+        print(file=sys.stderr)
+        print("方式3: 更新 ~/.config/argocd/config 中的 Token", file=sys.stderr)
+        print(f"   argocd login {server} --username <用户> --password <密码> --grpc-web --insecure", file=sys.stderr)
+        print(file=sys.stderr)
+        print(f"💡 配置文件: ~/.agents/skills/argocd-skill/.env", file=sys.stderr)
         return 1
 
     return args.func(client, args)
