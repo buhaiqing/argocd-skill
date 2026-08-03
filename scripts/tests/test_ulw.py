@@ -15,8 +15,9 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from ulw.client import ArgoCDClient
-from ulw.commands import PodLocation, delete_pod, find_pod
+from ulw.commands import BlockedError, PodLocation, delete_pod, find_pod, wait_pod_ready
 
 _BASE_MODULE = sys.modules[ArgoCDClient.__mro__[1].__module__]
 
@@ -640,8 +641,18 @@ def test_get_application_pods_returns_empty_when_both_fail():
 # commands.delete_pod
 # ======================================================================
 
-def test_delete_pod_calls_client():
+def _automated_client() -> ArgoCDClient:
+    """Client whose Application has an automated syncPolicy (delete allowed)."""
     client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application = MagicMock(return_value={
+        "metadata": {"name": "my-app"},
+        "spec": {"syncPolicy": {"automated": {"prune": True, "selfHeal": True}}},
+    })
+    return client
+
+
+def test_delete_pod_calls_client():
+    client = _automated_client()
     client.delete_application_resource = MagicMock(return_value={"status": "ok"})
 
     loc = PodLocation(
@@ -664,7 +675,7 @@ def test_delete_pod_calls_client():
 
 
 def test_delete_pod_passes_group_version():
-    client = ArgoCDClient(server="https://x.com", token="x")
+    client = _automated_client()
     client.delete_application_resource = MagicMock(return_value={})
 
     loc = PodLocation(
@@ -685,3 +696,357 @@ def test_delete_pod_passes_group_version():
         group="apps",
         version="v1",
     )
+
+
+# ======================================================================
+# commands.delete_pod — sync-policy safety guard (BlockedError)
+# ======================================================================
+
+_LOC = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+
+
+@pytest.mark.parametrize("app_spec", [
+    {"spec": {}},                                    # no syncPolicy at all
+    {"spec": {"syncPolicy": {}}},                    # syncPolicy without automated
+    {"spec": {"syncPolicy": {"automated": None}}},   # automated explicitly null
+    {"spec": {"syncPolicy": {"automated": False}}},  # automated false
+    {"spec": {"syncPolicy": "automated"}},           # syncPolicy is a str, not dict
+    {"spec": {"syncPolicy": 123}},                   # syncPolicy is a number
+    {},                                              # empty App payload
+])
+def test_delete_pod_blocks_when_not_automated(app_spec):
+    """Manual-sync Apps never self-heal a deleted Pod → refuse to delete.
+
+    Covers MAJOR-3: a non-dict ``syncPolicy`` must not raise AttributeError —
+    it must be treated as "not automated" and raise BlockedError instead.
+    """
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application = MagicMock(return_value=app_spec)
+    client.delete_application_resource = MagicMock()
+
+    with pytest.raises(BlockedError) as exc_info:
+        delete_pod(client, _LOC)
+
+    client.delete_application_resource.assert_not_called()
+    message = str(exc_info.value)
+    assert "my-app" in message
+    assert "automated" in message
+    assert "kubectl rollout restart" in message
+    assert "argocd app sync" in message
+
+
+@pytest.mark.parametrize("automated_value", [
+    "false",   # YAML-quoted false — common and dangerous
+    0,
+    "",
+    [],
+])
+def test_delete_pod_blocks_when_automated_is_falsy_non_dict(automated_value):
+    """MAJOR-4: only a dict counts as automated; any other value is blocked.
+
+    A quoted ``'false'`` in a real manifest would otherwise be let through by a
+    blacklist and delete a Pod that ArgoCD will not recreate.
+    """
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application = MagicMock(return_value={
+        "spec": {"syncPolicy": {"automated": automated_value}},
+    })
+    client.delete_application_resource = MagicMock()
+
+    with pytest.raises(BlockedError):
+        delete_pod(client, _LOC)
+    client.delete_application_resource.assert_not_called()
+
+
+def test_delete_pod_allows_automated_empty_dict():
+    """``automated: {}`` (all defaults) still counts as automated."""
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application = MagicMock(return_value={
+        "spec": {"syncPolicy": {"automated": {}}},
+    })
+    client.delete_application_resource = MagicMock(return_value={"status": "ok"})
+
+    assert delete_pod(client, _LOC) == {"status": "ok"}
+    client.delete_application_resource.assert_called_once()
+
+
+def test_delete_pod_blocks_when_get_application_fails():
+    """Unable to read the App ⇒ cannot prove it is automated ⇒ block."""
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application = MagicMock(side_effect=RuntimeError("ArgoCD API 403"))
+    client.delete_application_resource = MagicMock()
+
+    with pytest.raises(BlockedError, match="sync policy"):
+        delete_pod(client, _LOC)
+    client.delete_application_resource.assert_not_called()
+
+
+def test_delete_pod_skip_safety_check_bypasses_guard():
+    """``skip_safety_check=True`` is the documented escape hatch."""
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application = MagicMock(return_value={"spec": {}})
+    client.delete_application_resource = MagicMock(return_value={})
+
+    delete_pod(client, _LOC, skip_safety_check=True)
+    client.get_application.assert_not_called()
+    client.delete_application_resource.assert_called_once()
+
+
+# ======================================================================
+# commands.wait_pod_ready
+# ======================================================================
+
+def _fake_clock(interval: int):
+    """Drive time.monotonic/sleep from a controllable counter.
+
+    Patching only ``time.sleep`` (as the old tests did) removes the only
+    throttle and hides a busy-spin regression. Here both monotonic and sleep
+    advance together so the poll loop is bounded and ``call_count`` is assertable.
+    """
+    state = {"t": 0.0}
+
+    def fake_monotonic() -> float:
+        return state["t"]
+
+    def fake_sleep(duration: float) -> None:
+        state["t"] += duration
+
+    return fake_monotonic, fake_sleep
+
+
+def test_wait_pod_ready_succeeds_when_new_running_pod_appears():
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application_pods = MagicMock(side_effect=[
+        # old pod still there, no replacement yet
+        [{"name": "target-pod", "health": {"status": "Healthy"}}],
+        # old pod gone, new pod running
+        [{"name": "target-pod-new", "health": {"status": "Healthy"}}],
+    ])
+    fake_monotonic, fake_sleep = _fake_clock(1)
+    with patch("ulw.commands.time.monotonic", fake_monotonic), patch(
+        "ulw.commands.time.sleep", fake_sleep
+    ):
+        assert wait_pod_ready(client, "my-app", "target-pod", timeout=30, interval=1) is True
+    assert client.get_application_pods.call_count == 2
+
+
+def test_wait_pod_ready_ignores_non_running_new_pod():
+    """A new Pod that is still Progressing does not satisfy the wait."""
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application_pods = MagicMock(return_value=[
+        {"name": "target-pod-new", "health": {"status": "Progressing"}},
+    ])
+    fake_monotonic, fake_sleep = _fake_clock(1)
+    with patch("ulw.commands.time.monotonic", fake_monotonic), patch(
+        "ulw.commands.time.sleep", fake_sleep
+    ):
+        assert wait_pod_ready(client, "my-app", "target-pod", timeout=3, interval=1) is False
+    # Bounded: never busy-spins. ~timeout/interval polls, +1 for the final check.
+    assert client.get_application_pods.call_count <= 3 // 1 + 2
+
+
+def test_wait_pod_ready_times_out_when_old_pod_persists():
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application_pods = MagicMock(return_value=[
+        {"name": "target-pod", "health": {"status": "Healthy"}},
+        {"name": "target-pod-new", "health": {"status": "Healthy"}},
+    ])
+    fake_monotonic, fake_sleep = _fake_clock(1)
+    with patch("ulw.commands.time.monotonic", fake_monotonic), patch(
+        "ulw.commands.time.sleep", fake_sleep
+    ):
+        assert wait_pod_ready(client, "my-app", "target-pod", timeout=3, interval=1) is False
+    assert client.get_application_pods.call_count <= 3 // 1 + 2
+
+
+def test_wait_pod_ready_tolerates_transient_api_errors():
+    """A failing poll should be retried, not abort the wait."""
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application_pods = MagicMock(side_effect=[
+        RuntimeError("ArgoCD API 500"),
+        [{"name": "target-pod-new", "health": {"status": "Healthy"}}],
+    ])
+    fake_monotonic, fake_sleep = _fake_clock(1)
+    with patch("ulw.commands.time.monotonic", fake_monotonic), patch(
+        "ulw.commands.time.sleep", fake_sleep
+    ):
+        assert wait_pod_ready(client, "my-app", "target-pod", timeout=30, interval=1) is True
+
+
+def test_wait_pod_ready_accepts_nested_pod_status_shape():
+    """``/pods`` endpoint shape: metadata.name + status.phase."""
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application_pods = MagicMock(return_value=[
+        {"metadata": {"name": "target-pod-new"}, "status": {"phase": "Running"}},
+    ])
+    fake_monotonic, fake_sleep = _fake_clock(1)
+    with patch("ulw.commands.time.monotonic", fake_monotonic), patch(
+        "ulw.commands.time.sleep", fake_sleep
+    ):
+        assert wait_pod_ready(client, "my-app", "target-pod", timeout=30, interval=1) is True
+
+
+def test_wait_pod_ready_detects_statefulset_in_place_recreation():
+    """StatefulSet members keep their name (mysql-0); a changed
+    resourceVersion proves recreation even though the name persists."""
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application_pods = MagicMock(side_effect=[
+        [{"name": "mysql-0", "metadata": {"resourceVersion": "100"}, "health": {"status": "Healthy"}}],
+        [{"name": "mysql-0", "metadata": {"resourceVersion": "200"}, "health": {"status": "Healthy"}}],
+    ])
+    fake_monotonic, fake_sleep = _fake_clock(1)
+    with patch("ulw.commands.time.monotonic", fake_monotonic), patch(
+        "ulw.commands.time.sleep", fake_sleep
+    ):
+        assert wait_pod_ready(client, "my-app", "mysql-0", timeout=30, interval=1) is True
+
+
+# ======================================================================
+# ulw.py CLI — --yes / --app-name / --namespace / --wait-ready
+# ======================================================================
+
+@pytest.fixture
+def cli_client(monkeypatch):
+    """Patch ArgoCDClient.from_env in ulw.ulw to return a mock client."""
+    from ulw import ulw as ulw_cli
+
+    client = MagicMock()
+    monkeypatch.setattr(ulw_cli.ArgoCDClient, "from_env", classmethod(lambda cls, **kw: client))
+    return client
+
+
+def test_cli_delete_pod_yes_skips_confirmation(cli_client, monkeypatch):
+    from ulw import ulw as ulw_cli
+
+    loc = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+    monkeypatch.setattr(ulw_cli, "find_pod", MagicMock(return_value=loc))
+    delete_mock = MagicMock(return_value={"status": "ok"})
+    monkeypatch.setattr(ulw_cli, "delete_pod", delete_mock)
+
+    def _boom(*_a, **_kw):
+        raise AssertionError("input() must not be called with --yes")
+
+    monkeypatch.setattr("builtins.input", _boom)
+
+    assert ulw_cli.main(["delete-pod", "target-pod", "--yes"]) == 0
+    delete_mock.assert_called_once()
+
+
+def test_cli_delete_pod_without_yes_still_prompts(cli_client, monkeypatch):
+    from ulw import ulw as ulw_cli
+
+    loc = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+    monkeypatch.setattr(ulw_cli, "find_pod", MagicMock(return_value=loc))
+    delete_mock = MagicMock(return_value={})
+    monkeypatch.setattr(ulw_cli, "delete_pod", delete_mock)
+    monkeypatch.setattr("builtins.input", lambda *_a, **_kw: "no")
+
+    assert ulw_cli.main(["delete-pod", "target-pod"]) == 1
+    delete_mock.assert_not_called()
+
+
+def test_cli_delete_pod_eoferror_without_yes_is_clean_abort(cli_client, monkeypatch):
+    """MAJOR-5: piped/non-TTY stdin without --yes must abort with rc=1,
+    not raise an uncaught EOFError traceback."""
+    from ulw import ulw as ulw_cli
+
+    loc = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+    monkeypatch.setattr(ulw_cli, "find_pod", MagicMock(return_value=loc))
+    delete_mock = MagicMock(return_value={})
+    monkeypatch.setattr(ulw_cli, "delete_pod", delete_mock)
+    monkeypatch.setattr("builtins.input", lambda *_a, **_kw: (_ for _ in ()).throw(EOFError()))
+
+    assert ulw_cli.main(["delete-pod", "target-pod"]) == 1
+    delete_mock.assert_not_called()
+
+
+def test_cli_delete_pod_short_circuits_with_app_and_namespace(cli_client, monkeypatch):
+    from ulw import ulw as ulw_cli
+
+    find_mock = MagicMock()
+    monkeypatch.setattr(ulw_cli, "find_pod", find_mock)
+    delete_mock = MagicMock(return_value={"status": "ok"})
+    monkeypatch.setattr(ulw_cli, "delete_pod", delete_mock)
+
+    rc = ulw_cli.main([
+        "delete-pod", "target-pod",
+        "--app-name", "my-app",
+        "--namespace", "ops",
+        "--yes",
+    ])
+    assert rc == 0
+    find_mock.assert_not_called()
+    loc = delete_mock.call_args[0][1]
+    assert loc.app_name == "my-app"
+    assert loc.namespace == "ops"
+    assert loc.name == "target-pod"
+    assert loc.kind == "Pod"
+
+
+def test_cli_delete_pod_partial_short_circuit_falls_back_to_find(cli_client, monkeypatch):
+    """Only --app-name given ⇒ no short circuit, find_pod still runs."""
+    from ulw import ulw as ulw_cli
+
+    loc = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+    find_mock = MagicMock(return_value=loc)
+    monkeypatch.setattr(ulw_cli, "find_pod", find_mock)
+    monkeypatch.setattr(ulw_cli, "delete_pod", MagicMock(return_value={}))
+
+    assert ulw_cli.main(["delete-pod", "target-pod", "--app-name", "my-app", "--yes"]) == 0
+    find_mock.assert_called_once()
+
+
+def test_cli_delete_pod_blocked_error_returns_nonzero(cli_client, monkeypatch):
+    from ulw import ulw as ulw_cli
+
+    loc = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+    monkeypatch.setattr(ulw_cli, "find_pod", MagicMock(return_value=loc))
+    monkeypatch.setattr(
+        ulw_cli, "delete_pod",
+        MagicMock(side_effect=BlockedError("App my-app is not automated")),
+    )
+
+    assert ulw_cli.main(["delete-pod", "target-pod", "--yes"]) == 2
+
+
+def test_cli_delete_pod_wait_ready_success(cli_client, monkeypatch):
+    from ulw import ulw as ulw_cli
+
+    loc = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+    monkeypatch.setattr(ulw_cli, "find_pod", MagicMock(return_value=loc))
+    monkeypatch.setattr(ulw_cli, "delete_pod", MagicMock(return_value={}))
+    wait_mock = MagicMock(return_value=True)
+    monkeypatch.setattr(ulw_cli, "wait_pod_ready", wait_mock)
+
+    rc = ulw_cli.main([
+        "delete-pod", "target-pod", "--yes", "--wait-ready",
+        "--wait-timeout", "60", "--wait-interval", "2",
+    ])
+    assert rc == 0
+    wait_mock.assert_called_once_with(
+        cli_client, "my-app", "target-pod", timeout=60, interval=2,
+    )
+
+
+def test_cli_delete_pod_wait_ready_timeout_returns_nonzero(cli_client, monkeypatch):
+    from ulw import ulw as ulw_cli
+
+    loc = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+    monkeypatch.setattr(ulw_cli, "find_pod", MagicMock(return_value=loc))
+    monkeypatch.setattr(ulw_cli, "delete_pod", MagicMock(return_value={}))
+    monkeypatch.setattr(ulw_cli, "wait_pod_ready", MagicMock(return_value=False))
+
+    assert ulw_cli.main(["delete-pod", "target-pod", "--yes", "--wait-ready"]) == 1
+
+
+def test_cli_delete_pod_no_wait_ready_skips_polling(cli_client, monkeypatch):
+    from ulw import ulw as ulw_cli
+
+    loc = PodLocation(app_name="my-app", namespace="ops", kind="Pod", name="target-pod")
+    monkeypatch.setattr(ulw_cli, "find_pod", MagicMock(return_value=loc))
+    monkeypatch.setattr(ulw_cli, "delete_pod", MagicMock(return_value={}))
+    wait_mock = MagicMock()
+    monkeypatch.setattr(ulw_cli, "wait_pod_ready", wait_mock)
+
+    assert ulw_cli.main(["delete-pod", "target-pod", "--yes"]) == 0
+    wait_mock.assert_not_called()

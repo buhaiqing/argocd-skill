@@ -1,8 +1,8 @@
 ---
 name: argocd-skill
 description: |
-  ArgoCD CLI 全流程技能。Use when: (1) argocd CLI 安装/升级；(2) 自然语言生成 argocd CLI 命令（20+ 操作）；(3) Application YAML 反向转 `argocd app create`；(4) 批量 manifest 转换（argocd_cli_gen）；(5) 批量操作（batch）；(6) 变更影响分析（impact）；(7) 诊断/漂移/健康/合规/成本/自动修复；(8) 部署频率/OOS 统计；(9) Git 源健康（repo_health）；(10) 多集群对比；(11) 报告推送/配置模板；(12) HTTP API 回退 + Pod 操作（ulw）；(13) ArgoCD Rollouts 渐进式交付：Deployment→Rollout 转换、Canary/BlueGreen/Analysis 配置生成、kubectl argo rollouts 命令生成、Rollout 状态与 AnalysisRun 归因诊断（argocd_insight rollouts diagnose）。
-  Trigger keywords: argocd, ArgoCD, argocd app, app of apps, App-of-Apps, kustomize, 多源, 反向生成, 批量转换, GitOps, kubectl apply, HTTP API, 诊断, OutOfSync, 漂移, 健康, 合规, 成本, 自动修复, 批量, 配置模板, 部署频率, 自进化, 离线触发, argocd_insight, argocd_deploy_stats, ulw, 孤儿 Pod, batch, impact, repo_health, multi-cluster, report-push, scaffold, rollouts, Rollout, kubectl argo rollouts, Deployment 转 Rollout, 渐进式交付, canary, bluegreen, AnalysisRun, 金丝雀, 蓝绿, 灰度发布, app actions, resource actions, 资源操作, 重启 Pod.
+  ArgoCD CLI 全流程技能。Use when: (1) argocd CLI 安装/升级；(2) 自然语言生成 argocd CLI 命令（20+ 操作）；(3) Application YAML 反向转 `argocd app create`；(4) 批量 manifest 转换（argocd_cli_gen）；(5) 批量操作（batch）；(6) 变更影响分析（impact）；(7) 诊断/漂移/健康/合规/成本/自动修复；(8) 部署频率/OOS 统计；(9) Git 源健康（repo_health）；(10) 多集群对比；(11) 报告推送/配置模板；(12) 单 Pod 重启（ulw）：无需 kubectl 凭证，通过 ArgoCD HTTP API 直接删除 Pod；(13) HTTP API 回退（CLI 失败时）；(14) ArgoCD Rollouts 渐进式交付：Deployment→Rollout 转换、Canary/BlueGreen/Analysis 配置生成、kubectl argo rollouts 命令生成、Rollout 状态与 AnalysisRun 归因诊断（argocd_insight rollouts diagnose）。
+  Trigger keywords: argocd, ArgoCD, argocd app, app of apps, App-of-Apps, kustomize, 多源, 反向生成, 批量转换, GitOps, kubectl apply, HTTP API, 诊断, OutOfSync, 漂移, 健康, 合规, 成本, 自动修复, 批量, 配置模板, 部署频率, 自进化, 离线触发, argocd_insight, argocd_deploy_stats, ulw, 孤儿 Pod, batch, impact, repo_health, multi-cluster, report-push, scaffold, rollouts, Rollout, kubectl argo rollouts, Deployment 转 Rollout, 渐进式交付, canary, bluegreen, AnalysisRun, 金丝雀, 蓝绿, 灰度发布, app actions, resource actions, 资源操作, 重启 Pod, 单个 Pod 重启, 单独重启 Pod, ulw 重启 Pod, ulw 删 Pod, 无需 kubectl 重启 Pod.
 allowed-tools: [Read, Write, Bash, Grep, Glob]
 ---
 
@@ -87,6 +87,13 @@ allowed-tools: [Read, Write, Bash, Grep, Glob]
 - **避免**：3.6.1 转换必须补 `strategy` 字段 + `service` 引用；输出前提示 Service 需预存在
 - **友好提示**：⚠️ Rollout 转换缺 strategy/Service → 详见附录 A 格式
 
+### 死法 12：误用 `kubectl delete pod` 重启 ArgoCD 管理的 Pod
+- **触发**：目标 Pod 由 ArgoCD Application 管理，却直接 `kubectl delete pod`
+- **表现**：若该 App 无 `spec.syncPolicy.automated`（本项目业务 App 均如此），Pod 删除后**不会**被 ArgoCD 重建，副本数变少
+- **避免**：优先 `python3 -m ulw delete-pod <pod> --yes`（删前自动校验 automated，非 automated 拒绝 rc=2 且不删 Pod）；确需重启非 automated 工作负载改用 `kubectl rollout restart deployment/<name> -n <ns>`
+- **深度参考**：[references/ulw-restart-pod.md](references/ulw-restart-pod.md)
+- **友好提示**：⚠️ 该 Pod 由 ArgoCD 管理 → 详见附录 A 格式
+
 ---
 
 ## 三、原子级 SOP
@@ -160,6 +167,51 @@ if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi
 - 业务 ns → `--sync-option CreateNamespace=true`（禁止 automated）
 
 **Step 6: 输出命令并标注复用字段**
+
+---
+
+### 3.3.x restart Pod 决策树（必读）
+
+> 用户说「重启 Pod xxx」时，**必须**先走此决策树再执行。
+> 详见 [references/argocd-restart-pod-guide.md](references/argocd-restart-pod-guide.md)
+
+```
+用户：「重启 Pod <name>」
+         │
+         ▼
+┌─ 追问意图 ─────────────────────────────────────────┐
+│ 「要重启单个 Pod（仅此一个 Pod），还是整个 Deployment？」 │
+└────────────────────────────────────────────────────┘
+         │
+    ┌────┴──────────────────────────┐
+    ▼                                 ▼
+ 单个 Pod                          Deployment
+ (仅限指定 Pod)                    (所有 Pod)
+    │                                 │
+    ▼                                 ▼
+ 默认：ulw delete-pod          argocd app actions list
+ (无需 kubectl 凭证)                 → 有 restart？
+    │                                 │
+    ├─ 成功 → K8s 自愈拉起                ▼
+    ▼                                 ▼
+ 兜底：kubectl delete pod    argocd app actions run
+ (如有 kubeconfig)             --kind Deployment
+                             --resource-name <name>
+```
+
+**具体步骤**：
+
+1. **推荐**：`python -m ulw delete-pod <pod-name>`（无需 kubectl 凭证）
+   - 通过 ArgoCD HTTP API 调用 `delete_application_resource`
+   - Deployment 检测到 Pod 缺失 → 自动重建 Pod（K8s 自愈）
+2. **兜底**：`kubectl delete pod <pod-name> -n <ns>`（如果有 kubeconfig）
+
+**关键约束**：
+- `argocd app actions restart` 定义在 **Deployment 层级**，不是 Pod 层级
+- ArgoCD `managed-resources` API 不返回 Pod，无法通过 API 定位单个 Pod
+- `python -m ulw find-pod` 只能找到顶层资源（Deployment 等）
+
+**危险操作**：若用户明确说「整个 Deployment 一起重启」→ Step 3 二次确认后再执行。
 
 ---
 
@@ -246,6 +298,11 @@ python -m argocd_insight rollouts diagnose <name> -n <ns> --output json
 > CLI 回退协议详见 [references/agent-protocols.md](references/agent-protocols.md)
 **Step 4: 未知问题** → `kubectl apply -f` 兜底
 
+> **重启 ArgoCD 管理的 Pod**：优先 `python3 -m ulw delete-pod`（走 ArgoCD 资源 API，
+> 比裸 `kubectl delete pod` 更贴近 GitOps 真相源，且删除前自带 `syncPolicy.automated`
+> 校验，非 automated 直接拒绝 rc=2 不删）。`kubectl delete pod` 仅作兜底。
+> 完整流程见 [references/ulw-restart-pod.md](references/ulw-restart-pod.md)。
+
 ---
 
 ## 四、绝对禁区
@@ -320,6 +377,7 @@ python -m argocd_insight rollouts diagnose <name> -n <ns> --output json
 | [references/argocd-appproject-guide.md](references/argocd-appproject-guide.md) | AppProject 管理 |
 | [references/argocd-appset-guide.md](references/argocd-appset-guide.md) | ApplicationSet 管理 |
 | [references/argocd-sync-policy-deep-dive.md](references/argocd-sync-policy-deep-dive.md) | syncPolicy 深度解析 |
+| [references/ulw-restart-pod.md](references/ulw-restart-pod.md) | **ulw 重启单 Pod 专项 runbook**（安全护栏 / 退出码 / 兜底） |
 | [references/agent-protocols.md](references/agent-protocols.md) | 开机预检 / CLI 回退协议 |
 | [references/argocd-prompts.md](references/argocd-prompts.md) | 提示词示例 |
 | [references/performance-guide.md](references/performance-guide.md) | 性能指南与基准 |

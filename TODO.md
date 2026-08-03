@@ -84,6 +84,18 @@
 
 ---
 
+## 🔴 执行发现沉淀（会话复盘）
+
+> 来自实际执行中发现的问题与实测证据，不可绕过。
+
+| 发现 | 证据 | 沉淀 | 状态 |
+|------|------|------|------|
+| **`.env` 变量无 `export` 前缀导致子进程读不到** | `source .env && python3 -c "import os; print(os.environ.get('ARGOCD_SERVER'))"` 输出 `NOT SET` | `.env` 中所有变量必须加 `export` 前缀；验证：`source .env && echo $ARGOCD_SERVER` 应输出值 | ✅ 已修复 `.env` |
+| **`managed-resources` 返回 `liveState` 为 JSON 字符串** | `curl ... | python3 -c "...type(liveState)"` 输出 `<class 'str'>` | `find_pod` 必须 `json.loads(liveState)` 后再取值；回归测试已补 | ✅ 已修复 `commands.py` |
+| **ArgoCD API 不返回 Pod，只返回顶层资源** | `managed-resources` 只含 Deployment/Service/ConfigMap，无 Pod | Pod 重启只能通过 Deployment action 或 `kubectl delete pod`；ulw `find-pod` 无法定位单个 Pod | ⚠️ 需补充 `references/argocd-restart-pod-guide.md` |
+
+---
+
 ## ✅ P4 — ArgoCD Rollouts 渐进式交付（v0.6.0）
 
 > 并入现有 argocd-skill：Deployment→Rollout 转换、Canary/BlueGreen/Analysis 配置、
@@ -122,6 +134,9 @@
 | 2026-07-03 | v0.5.0 | P3.5 可观测与自进化：trace/analyzer/insight_engine/evolver/skillopt + 离线触发（cron/threshold/session_end） | 586/586 ✅ |
 | 2026-07-23 | v0.5.1 | argocd_api: delete-resource/delete 加 --yes 跳过确认；agent-protocols: .env↔config 同步 + gRPC 参数提取协议 | ✅ |
 | 2026-07-23 | v0.5.2 | Code review 修复：import 兜底路径 + AGENTS.md 同步校验 + 文档示例脱敏 + §0.1.5 交叉引用 | ✅ |
+| 2026-08-03 | v0.5.3 | ulw bugfix：`.env export` 前缀 + `liveState json.loads` + 回归测试；`.env` 变量必须 `export` 前缀；会话复盘机制写入 AGENTS.md | ✅ |
+| 2026-08-03 | v0.5.4 | ulw `delete-pod` 加固：删除前强制校验 `spec.syncPolicy.automated`（白名单，非 dict 拒绝 rc=2）；新增 `--yes`/`--app-name`+`--namespace` 短路/`--wait-ready`（含 StatefulSet 同名 Pod 用 resourceVersion 判新旧）/非正数校验；EOFError 干净中止；新增专项 runbook `references/ulw-restart-pod.md` + SKILL.md/AGENTS.md 同步；评审双 Agent 通过 | 31/31（ulw 相关）✅ |
+| 2026-08-03 | v0.5.4 | 修正 stale 断言：`managed-resources` 不返回 Pod 仍成立，但 `get_application_pods`（先 `/pods` 后 `/resource-tree` 回退）已可定位单 Pod，`ulw find-pod`/`delete-pod` 可用；同步更新 AGENTS.md 与 `argocd-restart-pod-guide.md` | ✅ |
 
 ---
 

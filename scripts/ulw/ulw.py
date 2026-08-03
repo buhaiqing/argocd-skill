@@ -2,8 +2,15 @@
 
 Usage:
     python -m ulw find-pod   <pod-name> [--env-file PATH]
-    python -m ulw delete-pod <pod-name> [--env-file PATH]
+    python -m ulw delete-pod <pod-name> [--env-file PATH] [--yes]
+                             [--app-name NAME --namespace NS]
+                             [--wait-ready [--wait-timeout N] [--wait-interval N]]
     python -m ulw -h
+
+Exit codes:
+    0  success
+    1  pod not found / aborted / --wait-ready timed out
+    2  refused by the sync-policy safety guard (BlockedError)
 """
 
 from __future__ import annotations
@@ -14,7 +21,15 @@ import sys
 from pathlib import Path
 
 from .client import ArgoCDClient
-from .commands import delete_pod, find_pod
+from .commands import (
+    DEFAULT_WAIT_INTERVAL,
+    DEFAULT_WAIT_TIMEOUT,
+    BlockedError,
+    PodLocation,
+    delete_pod,
+    find_pod,
+    wait_pod_ready,
+)
 
 
 def _env_file(s: str) -> Path:
@@ -22,6 +37,14 @@ def _env_file(s: str) -> Path:
     if not p.is_file():
         raise FileNotFoundError(p)
     return p
+
+
+def _positive_int(s: str) -> int:
+    """Argparse type: reject non-positive wait timeouts/intervals."""
+    value = int(s)
+    if value <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
+    return value
 
 
 def _build_find_parser(sub: argparse.ArgumentParser) -> None:
@@ -42,6 +65,36 @@ def _build_delete_parser(sub: argparse.ArgumentParser) -> None:
         default=Path(__file__).parents[2] / ".env",
         help="Path to .env file (default: <ulw>/../../.env)",
     )
+    sub.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the interactive confirmation prompt (safety guard still applies)",
+    )
+    sub.add_argument(
+        "--app-name",
+        help="Owning Application name; with --namespace, skips the full scan",
+    )
+    sub.add_argument(
+        "--namespace",
+        help="Pod namespace; with --app-name, skips the full scan",
+    )
+    sub.add_argument(
+        "--wait-ready",
+        action="store_true",
+        help="After deleting, poll until a replacement Pod is Running",
+    )
+    sub.add_argument(
+        "--wait-timeout",
+        type=_positive_int,
+        default=DEFAULT_WAIT_TIMEOUT,
+        help=f"--wait-ready timeout in seconds (default: {DEFAULT_WAIT_TIMEOUT})",
+    )
+    sub.add_argument(
+        "--wait-interval",
+        type=_positive_int,
+        default=DEFAULT_WAIT_INTERVAL,
+        help=f"--wait-ready poll interval in seconds (default: {DEFAULT_WAIT_INTERVAL})",
+    )
 
 
 def _do_find_pod(client: ArgoCDClient, pod_name: str) -> int:
@@ -57,24 +110,74 @@ def _do_find_pod(client: ArgoCDClient, pod_name: str) -> int:
     return 1
 
 
-def _do_delete_pod(client: ArgoCDClient, pod_name: str) -> int:
-    """Delete a Pod via its managing ArgoCD App."""
-    loc = find_pod(client, pod_name)
-    if not loc:
-        print("[ulw] cannot delete: pod not found", file=sys.stderr)
-        return 1
+def _do_delete_pod(client: ArgoCDClient, args: argparse.Namespace) -> int:
+    """Delete a Pod via its managing ArgoCD App.
 
-    # Safety: require explicit confirmation for delete-pod
-    confirm = input(
-        f"[ulw] delete Pod {pod_name} via App {loc.app_name}? "
-        "Type 'yes': ",
-    )
-    if confirm.strip().lower() != "yes":
-        print("[ulw] aborted", file=sys.stderr)
-        return 1
+    Returns 0 on success, 1 on not-found/abort/wait-timeout, 2 when the
+    sync-policy safety guard refuses the deletion.
+    """
+    pod_name = args.pod_name
 
-    result = delete_pod(client, loc)
+    if args.app_name and args.namespace:
+        # Short circuit: caller already knows the location, skip the full scan.
+        loc = PodLocation(
+            app_name=args.app_name,
+            namespace=args.namespace,
+            kind="Pod",
+            name=pod_name,
+            version="v1",
+        )
+        print(
+            f"[ulw] using supplied location: App={loc.app_name} ns={loc.namespace}",
+            file=sys.stderr,
+        )
+    else:
+        loc = find_pod(client, pod_name)
+        if not loc:
+            print("[ulw] cannot delete: pod not found", file=sys.stderr)
+            return 1
+
+    # Safety: require explicit confirmation unless --yes was passed.
+    if not args.yes:
+        try:
+            confirm = input(
+                f"[ulw] delete Pod {pod_name} via App {loc.app_name}? "
+                "Type 'yes': ",
+            )
+        except EOFError:
+            # Non-TTY (CI/cron/piped stdin) with no --yes: abort cleanly.
+            print(
+                "[ulw] no TTY for confirmation; pass --yes to proceed",
+                file=sys.stderr,
+            )
+            return 1
+        if confirm.strip().lower() != "yes":
+            print("[ulw] aborted", file=sys.stderr)
+            return 1
+
+    try:
+        result = delete_pod(client, loc)
+    except BlockedError as exc:
+        print(f"[ulw] BLOCKED: {exc}", file=sys.stderr)
+        return 2
     print(result)
+
+    if args.wait_ready:
+        ready = wait_pod_ready(
+            client,
+            loc.app_name,
+            pod_name,
+            timeout=args.wait_timeout,
+            interval=args.wait_interval,
+        )
+        if not ready:
+            print(
+                "[ulw] replacement Pod did not become Running in time — "
+                f"check `argocd app get {loc.app_name}`",
+                file=sys.stderr,
+            )
+            return 1
+
     return 0
 
 
@@ -117,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "find-pod":
         return _do_find_pod(client, args.pod_name)
     elif args.command == "delete-pod":
-        return _do_delete_pod(client, args.pod_name)
+        return _do_delete_pod(client, args)
 
     return 1
 

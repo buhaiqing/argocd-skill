@@ -42,6 +42,30 @@ must enforce Python quality manually** before committing:
 4. `ruff check` output after `--fix` is the exit criterion. Silent
    degradation (suppressing without understanding) is forbidden.
 
+## Subagent 并发执行规则
+
+**触发词**：`fan out` / `fan-out` / `parallel` / `subagent` / `并发` / `并行处理` / 任何 2+ 独立任务。
+
+**规则**：见 `~/.pi/agent/skills/subagent-orchestrator/SKILL.md`（系统强制）。
+本项目补充：
+
+| 场景 | 判定 | 操作 |
+|------|------|------|
+| 独立任务（修改 / 测试 / 文档 / 验证） | N 个无依赖子任务 | **必须** fan out 并行 |
+| 修复 + 验证同窗口 | 修复后可立即验证 | 先 fix 再 verify |
+| 修复 + 写文档同窗口 | 两者无依赖 | **必须** 并行 |
+| 单任务 < 5 min | 拆分之收益 < 开销 | 直接执行 |
+
+**决策流程（每次遇到 2+ 任务时必须跑）**：
+1. 识别每个任务的复杂度（1-3）和依赖关系
+2. 无依赖 → **必须并行**（≤ 3 并发上限）
+3. 有依赖 → 串行链，第一个完成后 fan out 后续
+4. 输出 orchestrator JSON（写入 `audit-results/gcl-trace-*.json`）
+
+**禁止**：
+- 🚫 多任务仍串行执行（浪费等待时间）
+- 🚫 fan out 前不写 orchestrator JSON
+
 ## What this repo is
 
 A flat collection of AI-Agent runbooks for operating
@@ -461,6 +485,108 @@ When a second `argocd-*-ops` skill lands (e.g. `argocd-notification-ops`,
 ## 语言要求
 
 所有交互回复都必须使用中文内容回复。用户使用中文提问时，必须用中文回答；用户使用英文提问时，也优先用中文回答。仅在用户明确要求使用英文时，才用英文回复。
+
+
+## 会话自我复盘与资产沉淀
+
+> 触发词：**「复盘」** / **「沉淀」** / **「经验」** / 任何 bugfix / 文档变更 / 实际执行后发现的问题。
+> **每次实际执行（≠ 纯分析）后强制执行**，不放过任何实际问题。
+
+### 触发时机（满足任一即触发）
+
+| 触发条件 | 说明 |
+|---------|------|
+| 实际执行命令失败 | traceback / exit code ≠ 0 |
+| 执行结果不符合预期 | 做了 A 但实际产生了 B |
+| 发现知识空白 | 不知道 → 查 → 学会 → 写下来 |
+| 修复了 bug | 必有根因 → 必有规则 → 必须写进规则 |
+| 新增了引用/文档 | 必有同步项 → 更新 SKILL.md / AGENTS.md |
+| 发现了 ulw / argocd_api 的 API 行为 | 实测证据 → 固化进测试 |
+
+### 复盘输出模板
+
+```
+## 📋 会话复盘 <YYYY-MM-DD>
+
+### 🔴 问题 1：<一句话描述>
+- **发现场景**：<用户说了什么 → 我做了什么 → 实际结果>
+- **根因**：<为什么出错>
+- **证据**：<命令输出 / traceback>
+- **修复**：<已执行的修复>
+- **沉淀为可执行规则**：
+  - 规则名：<rule-id>
+  - 内容：<具体规则，可直接照做>
+  - 示例：✅ <正确做法> / ❌ <错误做法>
+  - 触发条件：<何时触发>
+  - 边界：<例外情况>
+
+### 🟡 实测新发现
+- **发现**：<实测确认的事实>
+- **影响**：<哪些工具/文档受影响>
+- **沉淀**：<更新哪些文件>
+```
+
+### 沉淀资产分类（按优先级）
+
+| 优先级 | 资产类型 | 沉淀位置 | 触发场景 |
+|--------|---------|---------|---------|
+| **P0** | Bugfix + 回归测试 | `scripts/tests/test_*.py` | 任何代码 bug |
+| **P0** | API 行为实测证据 | `scripts/tests/test_*.py` fixture | 发现 API 实际返回格式 |
+| **P1** | 新的可执行规则 | `AGENTS.md` 或 `SKILL.md` 死法表 | 根因可泛化 |
+| **P1** | 新的 references 文档 | `references/` | 能力缺失需补 runbook |
+| **P2** | 提示词增强 | `references/argocd-prompts.md` | 用户用了没说过的短语 |
+| **P3** | 架构改进 | `docs/` 或 issue | 需要拆分/重构 |
+
+### 证据要求（铁律）
+
+- **实测输出**是唯一有效证据：curl / python -c / pytest 输出，不接受"可能"/"应该"
+- **规则必须可执行**：LLM 读完后能直接照做，不能是模糊建议
+- **测试必须能复现**：bugfix 后补的测试用例，下次 `pytest` 必须能跑过
+
+### 本次会话沉淀（示例）
+
+| 规则 | 内容 |
+|------|------|
+| **`.env export 规则`** | `.env` 文件中变量必须有 `export` 前缀，否则 `python3 -m ulw` 等子进程读不到环境变量。验证：`source .env && echo $ARGOCD_SERVER` 应输出值。 |
+| **`liveState` JSON 字符串规则** | `managed-resources` API 返回的 `liveState` 字段是 JSON 字符串（不是 dict），必须 `json.loads()` 后再取值。测试：`curl ... | python3 -c "import json,sys; d=json.load(sys.stdin); print(type(d[items][0][liveState]))"` 应输出 `<class \str>`。 |
+| **ArgoCD `managed-resources` 不返回 Pod** | `managed-resources` 只返回顶层资源（Deployment/Service 等），**不返回 Pod**。定位单个 Pod 必须改用 `/applications/<app>/pods`（ArgoCD 1.9+），404 时回退 `/resource-tree` 里筛 `kind == "Pod"` 节点——即 `argocd_api/client.py:get_application_pods` 的双策略，`python3 -m ulw find-pod` 已基于此实现。 |
+
+### 规则：`ulw-restart-pod-guard`
+
+- **内容**：用 `python3 -m ulw delete-pod` 重启 ArgoCD 管理的 Pod 前，工具已在
+  `commands.py:_assert_automated` 内置校验 App 的 `spec.syncPolicy.automated`：
+  只有该字段是 dict（含空 dict `{}`）才放行；非 automated（或 App 读不到）抛
+  `BlockedError`，**Pod 不会被删除**，退出码 **2**。`--yes` 只跳过交互确认，
+  不绕过该护栏，且无任何 CLI 开关可关闭它。用户若坚持要重启非 automated 的
+  App，**不要**为此给 App 加 `automated`（违反 4-tier 业务应用规范 / 死法 7），
+  改走 `kubectl rollout restart deployment/<name> -n <ns>`，或先
+  `argocd app sync <app>` 让 App 回到期望状态。
+- **示例**：
+  - ✅ `python3 -m ulw delete-pod <pod> --yes --wait-ready`；收到 rc=2 → 改用
+    `kubectl rollout restart deployment/<name> -n <ns>`
+  - ❌ 收到 rc=2 后给 App 补 `syncPolicy.automated` 再重试
+  - ❌ 对 ArgoCD 管理的 Pod 直接 `kubectl delete pod`（绕过护栏，非 auto-sync 时不重建）
+- **触发条件**：任何「重启 / 重启 Pod / 删 Pod 让它重来」类请求，且目标由
+  ArgoCD Application 管理（`python3 -m ulw find-pod <pod>` 能查到 APP_NAME）。
+- **边界**：仅适用于 ArgoCD 管理的 Pod。裸 K8s 工作负载（`find-pod` 查不到、
+  无 ArgoCD 纳管）直接走 `kubectl`；要重启**整个 Deployment 的所有 Pod** 走
+  `argocd app actions run <app> restart --kind Deployment`，不属本规则范围。
+- **详见**：[references/ulw-restart-pod.md](references/ulw-restart-pod.md)
+
+### TODO.md 同步
+
+每次复盘完成后，**必须**更新 TODO.md：
+1. 新发现 → 在对应能力下追加一行（带 🔴 标记）
+2. Bugfix → 已在本次修复的 → 标记为 ✅ + 说明
+3. 迭代记录 → 追加一行：`| 日期 | 版本 | 变更 | 测试 |`
+
+Report 格式：
+```
+[复盘] 本次沉淀 N 条规则，更新了：
+  - AGENTS.md §会话自我复盘（新增）
+  - TODO.md（迭代记录 + 能力追加）
+  - scripts/tests/test_ulw.py（新增回归测试 ×2）
+```
 
 ## 文档维护经验沉淀
 

@@ -14,11 +14,15 @@ from typing import Any
 try:
     from scripts.argocd_api.client import (
         ArgoCDClient as _BaseArgoCDClient,
+    )
+    from scripts.argocd_api.client import (
         _load_dotenv as _load_dotenv_fn,
     )
 except ImportError:
     from argocd_api.client import (
         ArgoCDClient as _BaseArgoCDClient,
+    )
+    from argocd_api.client import (
         _load_dotenv as _load_dotenv_fn,
     )
 
@@ -43,13 +47,21 @@ class UlwClient(_BaseArgoCDClient):
         cls,
         dotenv_path: str | Path | None = None,
         **kwargs: Any,
-    ) -> "UlwClient":
+    ) -> UlwClient:
         """ulw-compatible factory: accepts the historical ``dotenv_path`` kwarg.
 
         The canonical client renamed this to ``env_path``; this shim maps
         the old name so existing ulw callers (e.g. ``ulw.py``) keep working.
         """
         return super().from_env(env_path=dotenv_path, **kwargs)
+
+    def get_application(self, name: str) -> dict[str, Any]:
+        """Return a single Application with full spec + status.
+
+        Thin proxy over the canonical client so that ulw code (e.g. the
+        ``delete_pod`` sync-policy guard) never re-implements HTTP logic.
+        """
+        return super().get_application(name)
 
     def get_application_resource_tree(self, name: str) -> list[dict[str, Any]]:
         """Return the managed-resources tree items for an Application.

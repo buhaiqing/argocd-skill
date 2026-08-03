@@ -23,11 +23,32 @@
 
 ## 资源操作（app actions）
 
-- "列出 my-app 里所有可用 Action"
-- "对 my-app 里的 Deployment 执行 restart 操作"
+**Restart Pod 意图区分（必读）**：
+> 触发「重启 Pod」时，必须先追问意图，详见 [argocd-restart-pod-guide.md](argocd-restart-pod-guide.md)。
+
 - "帮我重启 my-app 里名为 api-service 的 Pod"
+  → ⚠️ 先追问：「单个 Pod」还是「整个 Deployment」？
+- "只重启一个 Pod，不要动其他的"
+  → 单个 Pod → `python -m ulw delete-pod <pod>`（无需 kubectl 凭证）
+- "对 my-app 里的 Deployment 执行 restart 操作"
+  → 整个 Deployment → `argocd app actions run my-app restart --kind Deployment --resource-name my-app`
 - "把 my-app 所有 Deployment 缩容到 0 再扩容回 1"
+  → 批量操作，缩容+扩容
 - "批量重启 prod 环境所有 App 里的 Pod"
+  → ⚠️ 追问：单个 Pod 重启？Deployment 级别重启？
+- "列出 my-app 里所有可用 Action"
+  → 查看当前 App 支持哪些 action
+
+## ulw 推荐触发（无需 kubectl）
+
+- "用 ulw 重启一下 xxx Pod"
+- "通过 ArgoCD 直接删 Pod（没 kubectl 凭证）"
+- "ulw delete-pod 怎么用"
+- "ulw find-pod 帮我找一下这个 Pod 归属哪个 App"
+- "用 ulw 批量重启应用的 Pod"
+- "ulw 和 kubectl 的区别在哪"
+- "没有 kubectl 的时候怎么重启 Pod"
+- "找运维处理之前，能不能用 ulw 自己搞定"
 
 ## 运维 Runbooks（深度操作指南）
 
