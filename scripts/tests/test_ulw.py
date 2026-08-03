@@ -6,18 +6,17 @@ No network calls — all external dependencies are mocked.
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
-
-import pytest
-
-from ulw.client import ArgoCDClient
-from ulw.commands import delete_pod, find_pod, PodLocation
 
 # The canonical client lives in argocd_api.client; ulw re-exports it.
 # from_env is inherited from the base class, so patch the base module that
 # the resolved import path actually uses (argocd_api.client or
 # scripts.argocd_api.client — same file, different sys.modules key).
 import sys
+from unittest.mock import MagicMock, patch
+
+import pytest
+from ulw.client import ArgoCDClient
+from ulw.commands import PodLocation, delete_pod, find_pod
 
 _BASE_MODULE = sys.modules[ArgoCDClient.__mro__[1].__module__]
 
@@ -239,7 +238,7 @@ def test_login_missing_token():
 
 @patch("argocd_api.client.requests.request")
 def test_get_uses_correct_url(mock_request):
-    mock_request.return_value = MagicMock(status_code=200, json=lambda: {})
+    mock_request.return_value = MagicMock(status_code=200, json=dict)
     client = ArgoCDClient(server="https://x.com", token="t")
     client._get("/applications")
     assert mock_request.call_args[0][1] == "https://x.com/api/v1/applications"
@@ -247,7 +246,7 @@ def test_get_uses_correct_url(mock_request):
 
 @patch("argocd_api.client.requests.request")
 def test_post_uses_correct_url(mock_request):
-    mock_request.return_value = MagicMock(status_code=200, json=lambda: {})
+    mock_request.return_value = MagicMock(status_code=200, json=dict)
     client = ArgoCDClient(server="https://x.com", token="t")
     client._post("/applications/my-app/sync", json={})
     assert mock_request.call_args[0][1] == "https://x.com/api/v1/applications/my-app/sync"
@@ -255,7 +254,7 @@ def test_post_uses_correct_url(mock_request):
 
 @patch("argocd_api.client.requests.request")
 def test_delete_uses_correct_url(mock_request):
-    mock_request.return_value = MagicMock(status_code=200, json=lambda: {})
+    mock_request.return_value = MagicMock(status_code=200, json=dict)
     client = ArgoCDClient(server="https://x.com", token="t")
     client._delete("/applications/my-app", params={"foo": "bar"})
     assert mock_request.call_args[0][1] == "https://x.com/api/v1/applications/my-app"
@@ -311,7 +310,7 @@ def test_list_applications():
 def test_list_applications_empty():
     client = ArgoCDClient(server="https://x.com", token="t")
     client._get = MagicMock(return_value=MagicMock(
-        json=lambda: {}
+        json=dict
     ))
     items = client.list_applications()
     assert items == []
@@ -351,7 +350,7 @@ def test_get_application_managed_resources():
 
 def test_delete_application_resource():
     client = ArgoCDClient(server="https://x.com", token="t")
-    client._delete = MagicMock(return_value=MagicMock(json=lambda: {}))
+    client._delete = MagicMock(return_value=MagicMock(json=dict))
     result = client.delete_application_resource(
         app_name="my-app",
         namespace="ops",
@@ -364,7 +363,7 @@ def test_delete_application_resource():
 
 def test_delete_application_resource_with_group_version():
     client = ArgoCDClient(server="https://x.com", token="t")
-    client._delete = MagicMock(return_value=MagicMock(json=lambda: {}))
+    client._delete = MagicMock(return_value=MagicMock(json=dict))
     client.delete_application_resource(
         app_name="my-app",
         namespace="ops",
@@ -384,19 +383,16 @@ def test_delete_application_resource_with_group_version():
 # ======================================================================
 
 def test_find_pod_returns_location_when_found():
+    """Pod via /pods endpoint (ArgoCD 1.9+) — flat shape."""
     client = ArgoCDClient(server="https://x.com", token="x")
     client.list_applications = MagicMock(return_value=[
         {"metadata": {"name": "my-app"}},
     ])
-    client.get_application_managed_resources = MagicMock(return_value=[
+    client.get_application_pods = MagicMock(return_value=[
         {
             "kind": "Pod",
             "apiVersion": "v1",
-            "liveState": {
-                "metadata": {"name": "target-pod", "namespace": "ops"},
-                "kind": "Pod",
-                "apiVersion": "v1",
-            },
+            "metadata": {"name": "target-pod", "namespace": "ops"},
         },
     ])
 
@@ -406,6 +402,8 @@ def test_find_pod_returns_location_when_found():
     assert loc.namespace == "ops"
     assert loc.kind == "Pod"
     assert loc.name == "target-pod"
+    assert loc.group == ""
+    assert loc.version == "v1"
 
 
 def test_find_pod_detects_api_version_group():
@@ -414,15 +412,11 @@ def test_find_pod_detects_api_version_group():
     client.list_applications = MagicMock(return_value=[
         {"metadata": {"name": "my-app"}},
     ])
-    client.get_application_managed_resources = MagicMock(return_value=[
+    client.get_application_pods = MagicMock(return_value=[
         {
             "kind": "Deployment",
             "apiVersion": "apps/v1",
-            "liveState": {
-                "metadata": {"name": "my-deploy", "namespace": "prod"},
-                "kind": "Deployment",
-                "apiVersion": "apps/v1",
-            },
+            "metadata": {"name": "my-deploy", "namespace": "prod"},
         },
     ])
 
@@ -437,8 +431,8 @@ def test_find_pod_returns_none_when_missing():
     client.list_applications = MagicMock(return_value=[
         {"metadata": {"name": "my-app"}},
     ])
-    client.get_application_managed_resources = MagicMock(return_value=[
-        {"kind": "Service", "liveState": {"metadata": {"name": "my-svc"}}},
+    client.get_application_pods = MagicMock(return_value=[
+        {"kind": "Service", "metadata": {"name": "my-svc"}},
     ])
 
     assert find_pod(client, "missing-pod") is None
@@ -450,17 +444,13 @@ def test_find_pod_skips_app_errors():
         {"metadata": {"name": "broken-app"}},
         {"metadata": {"name": "good-app"}},
     ])
-    client.get_application_managed_resources = MagicMock(side_effect=[
+    client.get_application_pods = MagicMock(side_effect=[
         RuntimeError("API error"),
         [
             {
                 "kind": "Pod",
                 "apiVersion": "v1",
-                "liveState": {
-                    "metadata": {"name": "target-pod", "namespace": "ops"},
-                    "kind": "Pod",
-                    "apiVersion": "v1",
-                },
+                "metadata": {"name": "target-pod", "namespace": "ops"},
             },
         ],
     ])
@@ -482,8 +472,168 @@ def test_find_pod_skips_app_without_name():
         {},  # no metadata
         {"not_name": "irrelevant"},
     ])
-    client.get_application_managed_resources = MagicMock(return_value=[])
+    client.get_application_pods = MagicMock(return_value=[])
     assert find_pod(client, "anything") is None
+
+
+def test_find_pod_via_pods_endpoint():
+    """Regression: when /pods endpoint returns items, find_pod uses them directly.
+
+    Simulates ArgoCD 1.9+ where ``GET /applications/{name}/pods`` returns a
+    standard K8s-style list: ``{"items": [{"kind": "Pod", "metadata": ...}, ...]}``.
+    """
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.list_applications = MagicMock(return_value=[
+        {"metadata": {"name": "hdops-mcp"}},
+    ])
+    # /pods endpoint succeeds — get_application_pods returns its items directly
+    client._get = MagicMock(return_value=MagicMock(
+        json=lambda: {"items": [
+            {
+                "kind": "Pod",
+                "apiVersion": "v1",
+                "metadata": {"name": "hdops-mcp-7b8cc44dd8-cx8x9", "namespace": "ops"},
+            },
+        ]},
+    ))
+
+    loc = find_pod(client, "hdops-mcp-7b8cc44dd8-cx8x9")
+    assert loc is not None
+    assert loc.app_name == "hdops-mcp"
+    assert loc.namespace == "ops"
+    assert loc.name == "hdops-mcp-7b8cc44dd8-cx8x9"
+    # /pods endpoint was hit (path contains /pods), not /resource-tree
+    called_path = client._get.call_args[0][0]
+    assert "/pods" in called_path
+
+
+def test_find_pod_via_resource_tree_fallback():
+    """Regression: when /pods endpoint returns 404, find_pod falls back to /resource-tree.
+
+    Real-world evidence (argocd.hd123.com): /applications/hdops-mcp/pods → HTTP 404
+    "Not Found". The fix: get_application_pods internally retries
+    /applications/{name}/resource-tree and filters nodes where kind == "Pod".
+    """
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.list_applications = MagicMock(return_value=[
+        {"metadata": {"name": "hdops-mcp"}},
+    ])
+
+    # Simulate: /pods returns 404, /resource-tree returns Pod nodes
+    def fake_get(path, **kwargs):
+        if path.endswith("/pods"):
+            # Mimic client._request behaviour on 4xx → RuntimeError
+            raise RuntimeError(f"ArgoCD API 404 at {path}: Not Found")
+        if path.endswith("/resource-tree"):
+            real = MagicMock()
+            real.json.return_value = {
+                "nodes": [
+                    {"kind": "Deployment", "name": "hdops-mcp", "namespace": "ops", "version": "v1"},
+                    {"kind": "ReplicaSet", "name": "hdops-mcp-7b8cc44dd8", "namespace": "ops", "version": "v1"},
+                    {"kind": "Pod", "name": "hdops-mcp-7b8cc44dd8-cx8x9", "namespace": "ops", "version": "v1"},
+                    {"kind": "Pod", "name": "hdops-mcp-7b8cc44dd8-abcde", "namespace": "ops", "version": "v1"},
+                ],
+                "hosts": [],
+            }
+            return real
+        raise AssertionError(f"unexpected path: {path}")
+
+    client._get = MagicMock(side_effect=fake_get)
+
+    loc = find_pod(client, "hdops-mcp-7b8cc44dd8-abcde")
+    assert loc is not None
+    assert loc.app_name == "hdops-mcp"
+    assert loc.namespace == "ops"
+    assert loc.name == "hdops-mcp-7b8cc44dd8-abcde"
+    assert loc.kind == "Pod"
+    assert loc.version == "v1"
+
+    # Verify both endpoints were attempted: /pods (404) then /resource-tree
+    called_paths = [c[0][0] for c in client._get.call_args_list]
+    assert any(p.endswith("/pods") for p in called_paths)
+    assert any(p.endswith("/resource-tree") for p in called_paths)
+
+
+def test_find_pod_via_resource_tree_no_pods():
+    """resource-tree fallback returns no Pod nodes → find_pod returns None."""
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.list_applications = MagicMock(return_value=[
+        {"metadata": {"name": "config-only-app"}},
+    ])
+
+    def fake_get(path, **kwargs):
+        if path.endswith("/pods"):
+            raise RuntimeError(f"ArgoCD API 404 at {path}: Not Found")
+        if path.endswith("/resource-tree"):
+            return MagicMock(json=lambda: {
+                "nodes": [
+                    {"kind": "ConfigMap", "name": "cm1", "namespace": "ops", "version": "v1"},
+                    {"kind": "Deployment", "name": "deploy1", "namespace": "ops", "version": "v1"},
+                ],
+                "hosts": [],
+            })
+        raise AssertionError(f"unexpected path: {path}")
+
+    client._get = MagicMock(side_effect=fake_get)
+    assert find_pod(client, "anything") is None
+
+
+# ======================================================================
+# ArgoCDClient.get_application_pods (base client method)
+# ======================================================================
+
+def test_get_application_pods_uses_pods_endpoint():
+    """When /pods endpoint returns 200, use its items directly."""
+    client = ArgoCDClient(server="https://x.com", token="t")
+    client._get = MagicMock(return_value=MagicMock(
+        json=lambda: {"items": [{"kind": "Pod", "name": "p1"}]},
+    ))
+    pods = client.get_application_pods("my-app")
+    assert len(pods) == 1
+    assert pods[0]["name"] == "p1"
+    assert "/pods" in client._get.call_args[0][0]
+
+
+def test_get_application_pods_falls_back_to_resource_tree():
+    """When /pods returns 404, extract Pod nodes from /resource-tree."""
+    client = ArgoCDClient(server="https://x.com", token="t")
+
+    def fake_get(path, **kwargs):
+        if path.endswith("/pods"):
+            raise RuntimeError(f"ArgoCD API 404 at {path}: Not Found")
+        if path.endswith("/resource-tree"):
+            return MagicMock(json=lambda: {
+                "nodes": [
+                    {"kind": "Deployment", "name": "deploy1"},
+                    {"kind": "Pod", "name": "pod1"},
+                    {"kind": "Pod", "name": "pod2"},
+                ],
+            })
+        raise AssertionError(f"unexpected path: {path}")
+
+    client._get = MagicMock(side_effect=fake_get)
+    pods = client.get_application_pods("my-app")
+    assert len(pods) == 2
+    assert {p["name"] for p in pods} == {"pod1", "pod2"}
+    called_paths = [c[0][0] for c in client._get.call_args_list]
+    assert any(p.endswith("/pods") for p in called_paths)
+    assert any(p.endswith("/resource-tree") for p in called_paths)
+
+
+def test_get_application_pods_returns_empty_when_both_fail():
+    """Both /pods (404) and /resource-tree (5xx) fail → return []."""
+    client = ArgoCDClient(server="https://x.com", token="t")
+
+    def fake_get(path, **kwargs):
+        if path.endswith("/pods"):
+            raise RuntimeError(f"ArgoCD API 404 at {path}: Not Found")
+        if path.endswith("/resource-tree"):
+            raise RuntimeError(f"ArgoCD API 500 at {path}: Internal Error")
+        raise AssertionError(f"unexpected path: {path}")
+
+    client._get = MagicMock(side_effect=fake_get)
+    pods = client.get_application_pods("my-app")
+    assert pods == []
 
 
 # ======================================================================

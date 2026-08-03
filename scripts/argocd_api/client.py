@@ -9,13 +9,20 @@ Handles:
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import sys
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
 import requests
+import yaml
+
+# Upper bound on parallel resource-tree fetches in ``find_pod``. Kept small so
+# a large Application inventory cannot flood the ArgoCD API server.
+FIND_POD_MAX_WORKERS = 8
 
 
 class ArgoCDClient:
@@ -30,6 +37,9 @@ class ArgoCDClient:
         self.server = server.rstrip("/")
         self.token = token
         self.ssl_verify = ssl_verify
+        # Reused across every request so batch callers (argocd_insight) share
+        # one TCP/TLS connection instead of re-handshaking per command.
+        self._session = requests.Session()
 
     # ------------------------------------------------------------------
     # Factory
@@ -38,17 +48,26 @@ class ArgoCDClient:
     def from_env(
         cls,
         env_path: str | Path | None = None,
-    ) -> "ArgoCDClient":
+        validate: bool = True,
+    ) -> ArgoCDClient:
         """Auto-configure from environment / .env / argocd config.
 
         Auth priority:
           1. ARGOCD_AUTH_TOKEN (shell env) — 优先使用环境变量中的 token
           2. ~/.config/argocd/config  (local config YAML) — 尝试本地配置的 token
           3. .env file → ARGOCD_USERNAME + ARGOCD_PASSWORD → API login — 用户名密码登录
+          4. .env file → ARGOCD_AUTH_TOKEN
 
         Token 过期自动回退机制:
           - 当从 config 获取的 token 过期时，自动回退到 username+password 登录
           - 避免因 token 过期导致操作失败
+
+        Args:
+            env_path: 可选的 .env 文件路径，加载后不覆盖已有环境变量。
+            validate: 每个候选 token 是否发 ``/account`` 请求做有效性探测。
+                默认 True。调用方已知 token 有效时传 ``False`` 可跳过探测，
+                省掉最多 3 次 HTTP 往返——代价是过期 token 不再触发向下
+                回退，而是在首次真实调用时报错。
         """
         if env_path:
             _load_dotenv(env_path)
@@ -64,7 +83,7 @@ class ArgoCDClient:
         if token:
             # 验证 token 是否有效
             client = cls(server=server, token=token, ssl_verify=ssl_verify)
-            if cls._validate_token(client):
+            if not validate or cls._validate_token(client):
                 print("[argocd-api] using token from shell env", file=sys.stderr)
                 return client
             # token 无效，继续尝试下一优先级
@@ -75,7 +94,7 @@ class ArgoCDClient:
         token = _token_from_argocd_config(server)
         if token:
             client = cls(server=server, token=token, ssl_verify=ssl_verify)
-            if cls._validate_token(client):
+            if not validate or cls._validate_token(client):
                 print("[argocd-api] using token from ~/.config/argocd/config", file=sys.stderr)
                 return client
             # token 无效，自动回退到 username+password 登录
@@ -99,7 +118,7 @@ class ArgoCDClient:
         token = os.environ.get("ARGOCD_AUTH_TOKEN") or None
         if token:
             client = cls(server=server, token=token, ssl_verify=ssl_verify)
-            if cls._validate_token(client):
+            if not validate or cls._validate_token(client):
                 print("[argocd-api] using token from .env file", file=sys.stderr)
                 return client
 
@@ -110,7 +129,7 @@ class ArgoCDClient:
         )
 
     @classmethod
-    def _validate_token(cls, client: "ArgoCDClient") -> bool:
+    def _validate_token(cls, client: ArgoCDClient) -> bool:
         """验证 token 是否有效（通过调用 whoami API）"""
         try:
             client._get("/account")
@@ -161,6 +180,45 @@ class ArgoCDClient:
     def get_application_managed_resources(self, name: str) -> list[dict[str, Any]]:
         """Return live + target resource state for an Application."""
         return self._get(f"/applications/{name}/managed-resources").json().get("items", [])
+
+    def get_application_pods(self, name: str) -> list[dict[str, Any]]:
+        """Return Pods belonging to an Application.
+
+        Tries the dedicated ``/pods`` endpoint first (ArgoCD 1.9+). On 404
+        (older ArgoCD or feature disabled — confirmed against
+        ``argocd.hd123.com`` returning "Not Found"), falls back to
+        extracting ``kind == "Pod"`` nodes from ``/resource-tree``.
+
+        Each returned dict is a flat Pod description shaped like the
+        resource-tree node: ``name``, ``namespace``, ``kind``, ``version``.
+        ``version`` plays the role of K8s ``apiVersion``.
+        """
+        # Strategy 1: dedicated /pods endpoint (preferred when available).
+        try:
+            resp = self._get(f"/applications/{name}/pods")
+            return resp.json().get("items", [])
+        except RuntimeError as exc:
+            if "404" not in str(exc):
+                # Non-404 errors (auth, network) — surface as empty list so
+                # find_pod keeps scanning other apps instead of aborting.
+                print(
+                    f"[argocd-api] /pods error for {name}: {exc}",
+                    file=sys.stderr,
+                )
+            # 404 → fall through to resource-tree.
+
+        # Strategy 2: extract Pod nodes from resource-tree. Use _get
+        # directly so we bypass any subclass override (e.g. UlwClient
+        # flattens the tree to .items only).
+        try:
+            tree = self._get(f"/applications/{name}/resource-tree").json()
+        except (RuntimeError, ValueError) as exc:
+            print(
+                f"[argocd-api] resource-tree fallback failed for {name}: {exc}",
+                file=sys.stderr,
+            )
+            return []
+        return [node for node in tree.get("nodes", []) if node.get("kind") == "Pod"]
 
     def get_application_manifests(self, name: str) -> list[dict[str, Any]]:
         """Return rendered manifests for an Application."""
@@ -289,15 +347,38 @@ class ArgoCDClient:
     # Pod helpers
     # ------------------------------------------------------------------
     def find_pod(self, pod_name: str) -> dict[str, Any] | None:
-        """Search every Application for a Pod by name. Returns the node dict."""
-        apps = self.list_applications()
-        for app in apps:
-            app_name = app.get("metadata", {}).get("name", "") or app.get("name", "")
-            if not app_name:
-                continue
-            try:
-                tree = self.get_application_resource_tree(app_name)
-            except Exception:
+        """Search every Application for a Pod by name. Returns the node dict.
+
+        Resource trees are fetched concurrently (one HTTP call per
+        Application) because the serial version was an N+1 round-trip. The
+        match itself stays serial so app ordering — and therefore the result
+        for a duplicated pod name — remains deterministic.
+        """
+        app_names = [
+            name
+            for app in self.list_applications()
+            if (name := app.get("metadata", {}).get("name", "") or app.get("name", ""))
+        ]
+        if not app_names:
+            return None
+
+        trees: dict[str, dict[str, Any]] = {}
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(FIND_POD_MAX_WORKERS, len(app_names)),
+        ) as pool:
+            futures = {
+                pool.submit(self.get_application_resource_tree, name): name
+                for name in app_names
+            }
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    trees[futures[future]] = future.result()
+                except Exception:
+                    continue
+
+        for app_name in app_names:
+            tree = trees.get(app_name)
+            if not tree:
                 continue
             for node in tree.get("nodes", []):
                 if node.get("kind") == "Pod" and node.get("name") == pod_name:
@@ -353,7 +434,7 @@ class ArgoCDClient:
         path: str,
         **kwargs: Any,
     ) -> requests.Response:
-        resp = requests.request(
+        resp = self._session.request(
             method,
             self._url(path),
             headers=self._headers(),
@@ -407,8 +488,6 @@ def _token_from_argocd_config(server: str | None = None) -> str | None:
       1. Find the user whose name best matches the target server hostname.
       2. Fallback: return the first user whose token isn't empty.
     """
-    import yaml
-
     config_path = Path.home() / ".config" / "argocd" / "config"
     if not config_path.is_file():
         return None
@@ -428,7 +507,6 @@ def _token_from_argocd_config(server: str | None = None) -> str | None:
     # Extract host part from server URL for comparison
     target_host = server or ""
     # e.g. "https://argocd.hd123.com/dnet-int" -> "argocd.hd123.com"
-    import urllib.parse
     try:
         target_host = urllib.parse.urlparse(target_host).hostname or target_host
     except Exception:

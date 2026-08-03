@@ -24,13 +24,31 @@ class PodLocation:
     version: str = ""
 
 
+def _pod_api_version(pod: dict) -> tuple[str, str]:
+    """Extract (group, version) from a Pod dict.
+
+    ``/pods`` endpoint returns ``apiVersion`` (e.g. ``v1`` or ``apps/v1``);
+    ``/resource-tree`` nodes return ``version`` (e.g. ``v1``). Handle both.
+    """
+    api_ver = pod.get("apiVersion") or pod.get("version") or "v1"
+    if "/" in api_ver:
+        group, version = api_ver.split("/", 1)
+    else:
+        group = ""
+        version = api_ver
+    return group, version
+
+
 def find_pod(client: ArgoCDClient, pod_name: str) -> PodLocation | None:
     """Search all ArgoCD Applications for the one that manages `pod_name`.
 
     Strategy:
       1. List all Applications.
-      2. For each App, query its managed-resources (live state).
-      3. Return the first match whose live-resource name equals pod_name.
+      2. For each App, call ``client.get_application_pods(app_name)`` —
+         uses ``/pods`` endpoint (ArgoCD 1.9+) with ``/resource-tree``
+         fallback (works on every version, since ``managed-resources``
+         never returns Pods).
+      3. Return the first Pod whose name equals ``pod_name``.
     """
     print(f"[ulw] searching for pod={pod_name} across all Applications …", file=sys.stderr)
 
@@ -43,34 +61,37 @@ def find_pod(client: ArgoCDClient, pod_name: str) -> PodLocation | None:
             continue
 
         try:
-            resources = client.get_application_managed_resources(app_name)
+            pods = client.get_application_pods(app_name)
         except Exception as exc:
             print(f"[ulw]   skip {app_name}: {exc}", file=sys.stderr)
             continue
 
-        for res in resources:
-            # Live-state resource
-            live = res.get("liveState") or {}
-            if live.get("metadata", {}).get("name") == pod_name:
-                ns = live.get("metadata", {}).get("namespace", "")
-                kind = live.get("kind", "")
-                group = live.get("apiVersion", "").split("/")[0] if "/" in live.get("apiVersion", "") else ""
-                version = live.get("apiVersion", "").split("/")[-1] if "/" in live.get("apiVersion", "") else ""
+        for pod in pods:
+            # Pod dicts may be flat (resource-tree node) or wrapped in
+            # metadata (some /pods implementations). Try both shapes.
+            metadata = pod.get("metadata") if isinstance(pod.get("metadata"), dict) else {}
+            name = metadata.get("name") or pod.get("name", "")
+            if name != pod_name:
+                continue
 
-                loc = PodLocation(
-                    app_name=app_name,
-                    namespace=ns,
-                    kind=kind,
-                    name=pod_name,
-                    group=group,
-                    version=version,
-                )
-                print(
-                    f"[ulw] FOUND: {pod_name} → App={app_name} "
-                    f"kind={kind} namespace={ns}",
-                    file=sys.stderr,
-                )
-                return loc
+            ns = metadata.get("namespace") or pod.get("namespace", "")
+            kind = pod.get("kind") or metadata.get("kind") or "Pod"
+            group, version = _pod_api_version(pod if "apiVersion" in pod or "version" in pod else metadata)
+
+            loc = PodLocation(
+                app_name=app_name,
+                namespace=ns,
+                kind=kind,
+                name=pod_name,
+                group=group,
+                version=version,
+            )
+            print(
+                f"[ulw] FOUND: {pod_name} → App={app_name} "
+                f"kind={kind} namespace={ns}",
+                file=sys.stderr,
+            )
+            return loc
 
     print(f"[ulw] pod={pod_name} not found in any ArgoCD Application", file=sys.stderr)
     return None
