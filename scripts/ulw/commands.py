@@ -6,6 +6,7 @@ delete-pod — delete a Pod via the managing Application's resource API
 
 from __future__ import annotations
 
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -115,7 +116,23 @@ def find_pod(client: ArgoCDClient, pod_name: str) -> PodLocation | None:
     return None
 
 
-def _assert_automated(client: ArgoCDClient, app_name: str) -> None:
+def _infer_workload_name(pod_name: str) -> str:
+    """Strip the ReplicaSet/StatefulSet hash suffixes from a Pod name.
+
+    A managed Pod is named ``<workload>-<rs-hash>-<pod-hash>``
+    (e.g. ``hdops-mcp-7b8cc44dd8-lmb2g``). The owning workload is the
+    prefix. Pod names without those suffixes (e.g. ``target-pod``) are
+    returned unchanged so the caller can substitute the real workload.
+    """
+    return re.sub(r"-[a-f0-9]{8,10}-[a-z0-9]{5}$", "", pod_name)
+
+
+def _assert_automated(
+    client: ArgoCDClient,
+    app_name: str,
+    namespace: str,
+    pod_name: str,
+) -> None:
     """Refuse to delete a Pod unless the owning App self-heals.
 
     Raises :class:`BlockedError` when ``spec.syncPolicy.automated`` is absent
@@ -128,8 +145,8 @@ def _assert_automated(client: ArgoCDClient, app_name: str) -> None:
         raise BlockedError(
             f"cannot verify sync policy of App '{app_name}': {exc}. "
             "Refusing to delete the Pod. Use "
-            f"`kubectl rollout restart` on the owning workload, or run "
-            f"`argocd app sync {app_name}` after deleting manually."
+            f"`kubectl rollout restart deployment/<workload> -n {namespace}`, "
+            f"or run `argocd app sync {app_name}` after deleting manually."
         ) from exc
 
     spec = app.get("spec")
@@ -140,12 +157,14 @@ def _assert_automated(client: ArgoCDClient, app_name: str) -> None:
     # 'false', 0, '') is a manual-sync App where a deleted Pod would NOT be
     # recreated. Whitelist over blacklist to avoid quoting-edge cases.
     if not isinstance(automated, dict):
+        workload = _infer_workload_name(pod_name)
         raise BlockedError(
             f"App '{app_name}' has no spec.syncPolicy.automated — a deleted "
             "Pod would NOT be recreated by ArgoCD. Refusing to delete. "
-            "Alternatives: `kubectl rollout restart deployment/<name> -n "
-            f"{app_name}`'s namespace, or delete then run "
-            f"`argocd app sync {app_name}` to restore desired state."
+            f"Alternatives: `kubectl rollout restart deployment/{workload} "
+            f"-n {namespace}` (replace <workload> if the owner differs), "
+            f"or delete the Pod then run `argocd app sync {app_name}` to "
+            "restore the desired state."
         )
 
 
@@ -165,7 +184,7 @@ def delete_pod(
             ``skip_safety_check`` is set).
     """
     if not skip_safety_check:
-        _assert_automated(client, loc.app_name)
+        _assert_automated(client, loc.app_name, loc.namespace, loc.name)
 
     print(
         f"[ulw] deleting {loc.kind}/{loc.name} "

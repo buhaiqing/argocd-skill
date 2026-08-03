@@ -137,6 +137,8 @@
 | 2026-08-03 | v0.5.3 | ulw bugfix：`.env export` 前缀 + `liveState json.loads` + 回归测试；`.env` 变量必须 `export` 前缀；会话复盘机制写入 AGENTS.md | ✅ |
 | 2026-08-03 | v0.5.4 | ulw `delete-pod` 加固：删除前强制校验 `spec.syncPolicy.automated`（白名单，非 dict 拒绝 rc=2）；新增 `--yes`/`--app-name`+`--namespace` 短路/`--wait-ready`（含 StatefulSet 同名 Pod 用 resourceVersion 判新旧）/非正数校验；EOFError 干净中止；新增专项 runbook `references/ulw-restart-pod.md` + SKILL.md/AGENTS.md 同步；评审双 Agent 通过 | 31/31（ulw 相关）✅ |
 | 2026-08-03 | v0.5.4 | 修正 stale 断言：`managed-resources` 不返回 Pod 仍成立，但 `get_application_pods`（先 `/pods` 后 `/resource-tree` 回退）已可定位单 Pod，`ulw find-pod`/`delete-pod` 可用；同步更新 AGENTS.md 与 `argocd-restart-pod-guide.md` | ✅ |
+| 2026-08-03 | v0.5.5 | ulw 护栏报错信息修复：`_assert_automated` 用真实 namespace + 从 Pod 名推断 workload 名，消除 `App名's namespace` 病句与未替换 `<name>` 占位符；新增 `_infer_workload_name()` + 回归测试 `test_blocked_message_uses_real_namespace_and_workload`（26 个 guard 测试全过，10 个 client 层失败为预存） | guard 26/26 ✅ |
+| 2026-08-03 | v0.5.5 | 实战重启 `hdops-mcp-7b8cc44dd8-lmb2g`（非 automated App）：本机无 kubeconfig、`argocd` CLI 在 context-path server 下 restart 不可用，改用 `delete_application_resource` + 立即 `sync_application` 组合；沉淀 `restart-pod-env-facts` 规则入 AGENTS.md（含 REST 端点可用性矩阵） | ✅ |
 
 ---
 

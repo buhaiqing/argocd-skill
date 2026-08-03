@@ -792,6 +792,36 @@ def test_delete_pod_skip_safety_check_bypasses_guard():
     client.delete_application_resource.assert_called_once()
 
 
+def test_blocked_message_uses_real_namespace_and_workload():
+    """MAJOR-5: the BlockedError must not confuse App name with namespace,
+    and must infer the owning workload from the Pod name.
+
+    Regression for the broken message
+    ``... -n my-app's namespace`` (App name used as namespace) and the
+    unresolved ``<name>`` placeholder.
+    """
+    loc = PodLocation(
+        app_name="hdops-mcp",
+        namespace="ops",
+        kind="Pod",
+        name="hdops-mcp-7b8cc44dd8-lmb2g",
+    )
+    client = ArgoCDClient(server="https://x.com", token="x")
+    client.get_application = MagicMock(return_value={"spec": {}})
+    client.delete_application_resource = MagicMock()
+
+    with pytest.raises(BlockedError) as exc_info:
+        delete_pod(client, loc)
+
+    message = str(exc_info.value)
+    assert "my-app" not in message
+    assert "-n ops`" in message                      # real namespace, not App name
+    assert "hdops-mcp-7b8cc44dd8-lmb2g" not in message  # workload, not raw Pod name
+    assert "deployment/hdops-mcp" in message          # inferred workload
+    assert "App name" not in message                  # no "App name's namespace" bug
+    assert "argocd app sync hdops-mcp" in message
+
+
 # ======================================================================
 # commands.wait_pod_ready
 # ======================================================================
