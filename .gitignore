@@ -234,3 +234,6 @@ __marimo__/
 
 # argocd_insight trace / snapshot runtime (see trace/decorator.py DEFAULT_RUNTIME_DIR)
 .runtime/
+
+# Subagent orchestrator trace output (see AGENTS.md §Subagent 并发执行规则)
+audit-results/
